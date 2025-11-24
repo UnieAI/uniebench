@@ -1,0 +1,8 @@
+requests
+hydra-core
+docker
+genai-perf
+gspread
+google-oauth2-tool
+aiohttp
+datasets
