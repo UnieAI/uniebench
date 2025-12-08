@@ -28,7 +28,7 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency):
         '--random-input-len', str(token_lengths.input_len),
         '--random-output-len', str(token_lengths.output_len),
         '--random-range-ratio', '0.8',
-        '--num-prompts', f'{5120}',
+        '--num-prompts', f'{concurrency * 10}',
         '--max-concurrency', str(concurrency),
         '--request-rate', 'inf',
         '--ignore-eos',
