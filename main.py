@@ -21,6 +21,8 @@ def main(cfg: DictConfig) -> None:
 
     # start server (outer loop)
     for container in cfg.server.container:
+        if container.port:
+            cfg.server.port = container.port
         run_container(cfg, container.path)
 
         # check health
