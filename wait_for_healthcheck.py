@@ -12,7 +12,7 @@ def wait_for_healthcheck(cfg: DictConfig, container_name: str) -> None:
     interval = cfg.healthcheck.interval
     max_tries = cfg.healthcheck.max_tries
     for attempt in range(max_tries):
-        logging.info(f'waiting... {attempt}/{max_tries}')
+        logging.info(f'waiting {url}... {attempt}/{max_tries}')
         time.sleep(interval)
         try:
             if requests.get(url, timeout=timeout).status_code == 200:
