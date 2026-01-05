@@ -15,9 +15,12 @@ def run_benchmark(cfg: DictConfig, benchmark_name, container, token_lengths, con
 def main(cfg: DictConfig) -> None:
     # run benchmark (inner loop)
     for container in cfg.server.container:
+        if container.port:
+            cfg.server.port = container.port
         for token_lengths in cfg.benchmark.token_lengths:
             for concurrency in cfg.benchmark.concurrency:
-                run_benchmark(cfg, container, token_lengths, concurrency)
+                for name in cfg.benchmark.name:
+                    run_benchmark(cfg, name, container, token_lengths, concurrency)
 
 
 if __name__ == "__main__":

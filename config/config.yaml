@@ -1,45 +1,39 @@
 autotest:
-  name: test1 # or comment out this line to use random name
+    name: nano-sglang # or comment out this line to use random name
 server:
-  platform: H100-2
-  container: 
-    - path: '/home/ubuntu/workspace/jeff/services/l-1.yml'
-      name: autotest_l1
-      tp_size: 1
-    - path: '/home/ubuntu/workspace/jeff/services/l-2.yml'
-      name: autotest_l2
-      tp_size: 2
-    # - path: '/home/ubuntu/workspace/jeff/services/v-1.yml'
-    #   name: autotest_v1
-    #   tp_size: 1
-    # - path: '/home/ubuntu/workspace/jeff/services/v-2.yml'
-    #   name: autotest_v2
-    #   tp_size: 2
-  base_url: http://localhost
-  port: 8910
-  model_path: /home/ubuntu/models
-  model_name: Qwen/Qwen3-30B-A3B-Instruct-2507
-  model_id: test
+    platform: H100-2
+    container:
+        # - path: "/home/ubuntu/workspace/jeff/Benchmark-Autotest/engine/nano-PEARL/docker-compose.yml"
+        #   name: nano_pearl_api
+        #   tp_size: 2
+        #   port: 8990
+        - path: none
+          name: sglang-nano-v9
+          tp_size: 2
+          port: 12470
+    port: 0
+    base_url: http://localhost
+    model_path: /home/ubuntu/models
+    model_name: Qwen/Qwen3-32B
+    model_id: test
 
 healthcheck:
-  url: "${server.base_url}:${server.port}/health"
-  timeout: 5
-  max_tries: 60
-  interval: 5.0
+    url: "${server.base_url}:${server.port}/health"
+    timeout: 5
+    max_tries: 100
+    interval: 5.0
 
 benchmark:
-  name: 
-    # - genai-perf
-    - inferencemax-h100
-  endpoint_type: chat
-  model_name: ${server.model_name}
-  interval: 120000
-  token_lengths:
-    # - input_len: 128
-    #   output_len: 1024
-    # - input_len: 1024
-    #   output_len: 128
-    - input_len: 768
-      output_len: 768
-  concurrency:
-    - 1024
+    name:
+        # - genai-perf
+        - inferencemax-h100
+    endpoint_type: chat
+    model_name: ${server.model_name}
+    interval: 120000
+    token_lengths:
+        - input_len: 768
+          output_len: 768
+    concurrency:
+        # - 1
+        - 8
+        # - 32

@@ -84,6 +84,10 @@ if __name__ == '__main__':
         print(f'- {f}')
     selected_folder = input('Enter the test name to export: ').strip()
     if selected_folder in folders:
-        export(selected_folder)
+        try:
+            export(selected_folder)
+            print("export completed.")
+        except:
+            print("export failed.")
     else:
         print(f'Test name "{selected_folder}" not found in ./results.')

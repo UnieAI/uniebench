@@ -292,7 +292,6 @@ async def async_request_openai_completions(
                                 # Note that text could be empty here
                                 # e.g. for special tokens
                                 text = choices[0].get("text")
-                                output.output_tokens += 1
                                 timestamp = time.perf_counter()
                                 # First token
                                 if not first_chunk_received:
@@ -395,8 +394,6 @@ async def async_request_openai_chat_completions(
 
                             if choices := data.get("choices"):
                                 content = choices[0]["delta"].get("content")
-                                output.output_tokens += 1
-
                                 # First token
                                 if ttft == 0.0:
                                     ttft = timestamp - st

@@ -130,7 +130,6 @@ def sample_sharegpt_requests(
             # Prune too long sequences.
             continue
         filtered_dataset.append((prompt, prompt_len, output_len, None))
-
     return filtered_dataset
 
 

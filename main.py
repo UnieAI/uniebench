@@ -4,6 +4,8 @@ import logging
 from datetime import datetime
 import os
 
+from pyarrow import LoggingMemoryPool
+
 from run_container import run_container
 from wait_for_healthcheck import wait_for_healthcheck
 from run_benchmark import run_benchmark
@@ -23,11 +25,17 @@ def main(cfg: DictConfig) -> None:
     for container in cfg.server.container:
         if container.port:
             cfg.server.port = container.port
-        run_container(cfg, container.path)
+        if container.path == "none":
+            logging.info('assume server is running')
+        else:
+            run_container(cfg, container.path)
 
         # check health
         try:
-            wait_for_healthcheck(cfg, container.name)
+            if container.path == "none":
+                logging.info('assume server is running')
+            else:
+                wait_for_healthcheck(cfg, container.name)
         except RuntimeError as e:
             logging.error(f'start server failed: {e}')
             stop_container(cfg, container.name)
