@@ -102,9 +102,13 @@ def sample_sharegpt_requests(
         dataset = json.load(f)
     # Filter out the conversations with less than 2 turns.
     dataset = [data for data in dataset if len(data["conversations"]) >= 2]
-    # Only keep the first two turns of each conversation.
-    dataset = [(data["conversations"][0]["value"],
-                data["conversations"][1]["value"]) for data in dataset]
+    # Only keep conversations where the first message is from a human.
+    dataset = [
+        (data["conversations"][i]["value"], data["conversations"][i+1]["value"])
+        for data in dataset
+        for i in range(len(data["conversations"]) - 1)
+        if data["conversations"][i]["from"] == "human"
+    ]
 
     # Shuffle the dataset.
     random.shuffle(dataset)
