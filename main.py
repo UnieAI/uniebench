@@ -16,6 +16,21 @@ from export import export
 @main(config_path="config", config_name="config", version_base="1.2")
 def main(cfg: DictConfig) -> None:
     # if autotest.name is not set, set to random name
+    if cfg.server.id:
+        for server_config in cfg.default_config.server:
+            if server_config.id == cfg.server.id:
+                cfg.server = {
+                    **cfg.server,
+                    **server_config.config
+                }
+    if cfg.benchmark.id:
+        for benchmark_config in cfg.default_config.benchmark:
+            if benchmark_config.id == cfg.benchmark.id:
+                cfg.benchmark = {
+                    **cfg.benchmark,
+                    **benchmark_config.config
+                }
+
     if not ('autotest' in cfg and 'name' in cfg.autotest):
         cfg.autotest.name = f'autotest_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
 
@@ -25,6 +40,8 @@ def main(cfg: DictConfig) -> None:
     for container in cfg.server.container:
         if container.port:
             cfg.server.port = container.port
+        if container.name == "none":
+            container.name = f'server_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
         if container.path == "none":
             logging.info('assume server is running')
         else:

@@ -1,21 +1,12 @@
 autotest:
-    name: nano-sglang # or comment out this line to use random name
+    name: A100-dataset-benchmark-test # or comment out this line to use random name
 server:
-    platform: H100-2
-    container:
-        # - path: "/home/ubuntu/workspace/jeff/Benchmark-Autotest/engine/nano-PEARL/docker-compose.yml"
-        #   name: nano_pearl_api
-        #   tp_size: 2
-        #   port: 8990
-        - path: none
-          name: sglang-nano-v9
-          tp_size: 2
-          port: 12470
-    port: 0
-    base_url: http://localhost
-    model_path: /home/ubuntu/models
-    model_name: Qwen/Qwen3-32B
-    model_id: test
+    platform: A100
+    id: external-service-Qwen3-8B-30000
+
+benchmark:
+    id: Synthia-Coder-1-8-64-256
+# you should only edit the config above
 
 healthcheck:
     url: "${server.base_url}:${server.port}/health"
@@ -23,17 +14,58 @@ healthcheck:
     max_tries: 100
     interval: 5.0
 
-benchmark:
-    name:
-        # - genai-perf
-        - inferencemax-h100
-    endpoint_type: chat
-    model_name: ${server.model_name}
-    interval: 120000
-    token_lengths:
-        - input_len: 768
-          output_len: 768
-    concurrency:
-        # - 1
-        - 8
-        # - 32
+default_config:
+    server:
+        - id: external-service-Llama-3.1-8B-Instruct-30000
+          config:
+            container:
+                - path: none
+                  name: none
+                  tp_size: 1
+                  port: 30000
+            port: 0
+            base_url: http://localhost
+            model_path: /home/ubuntu/models
+            model_name: meta-llama/Llama-3.1-8B-Instruct
+            model_id: test
+        - id: external-service-Llama-3.1-70B-30000
+          config:
+            container:
+                - path: none
+                  name: none
+                  tp_size: 1
+                  port: 30000
+            port: 0
+            base_url: http://localhost
+            model_path: /home/ubuntu/models
+            model_name: meta-llama/Llama-3.1-70B
+            model_id: test
+        - id: external-service-Qwen3-8B-30000
+          config:
+            container:
+                - path: none
+                  name: none
+                  tp_size: 1
+                  port: 30000
+            port: 0
+            base_url: http://localhost
+            model_path: /home/ubuntu/models
+            model_name: Qwen/Qwen3-8B
+            model_id: test
+    benchmark:
+        - id: Synthia-Coder-1-8-64-256
+          config:
+            name:
+                - inferencemax-h100
+            endpoint_type: chat
+            model_name: ${server.model_name}
+            interval: 120000
+            dataset_path: ./benchmark/datasets/MaziyarPanahi/Synthia-Coder-v1.5-I-sharegpt.json
+            token_lengths:
+                - input_len: 768
+                  output_len: 768
+            concurrency:
+                - 1
+                - 8
+                - 64
+                - 256

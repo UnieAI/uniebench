@@ -14,6 +14,13 @@ def run_container(cfg: DictConfig, container_path: dict, detected = True):
 @main(config_path="config", config_name="config", version_base="1.2")
 def main(cfg: DictConfig) -> None:
     # start server (outer loop)
+    if cfg.server.id:
+        for server_config in cfg.default_config.server:
+            if server_config.id == cfg.server.id:
+                cfg.server = {
+                    **cfg.server,
+                    **server_config.config
+                }
     for container in cfg.server.container:
         run_container(cfg, container.path)
 

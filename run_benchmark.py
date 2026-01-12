@@ -14,6 +14,20 @@ def run_benchmark(cfg: DictConfig, benchmark_name, container, token_lengths, con
 @main(config_path="config", config_name="config", version_base="1.2")
 def main(cfg: DictConfig) -> None:
     # run benchmark (inner loop)
+    if cfg.server.id:
+        for server_config in cfg.default_config.server:
+            if server_config.id == cfg.server.id:
+                cfg.server = {
+                    **cfg.server,
+                    **server_config.config
+                }
+    if cfg.benchmark.id:
+        for benchmark_config in cfg.default_config.benchmark:
+            if benchmark_config.id == cfg.benchmark.id:
+                cfg.benchmark = {
+                    **cfg.benchmark,
+                    **benchmark_config.config
+                }
     for container in cfg.server.container:
         if container.port:
             cfg.server.port = container.port
