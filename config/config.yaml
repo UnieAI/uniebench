@@ -69,3 +69,19 @@ default_config:
                 - 8
                 - 64
                 - 256
+        - id: sharegpt_gpt4-1-8-64-256
+          config:
+            name:
+                - inferencemax-h100
+            endpoint_type: chat
+            model_name: ${server.model_name}
+            interval: 120000
+            dataset_path: ./benchmark/datasets/shibing624/sharegpt_gpt4.jsonl
+            token_lengths:
+                - input_len: 768
+                  output_len: 768
+            concurrency:
+                - 1
+                - 8
+                - 64
+                - 256

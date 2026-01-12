@@ -98,8 +98,14 @@ def sample_sharegpt_requests(
     fixed_output_len: Optional[int] = None,
 ) -> List[Tuple[str, int, int, None]]:
     # Load the dataset.
-    with open(dataset_path, encoding='utf-8') as f:
-        dataset = json.load(f)
+    if dataset_path.endswith('.jsonl'):
+        with open(dataset_path, encoding='utf-8') as f:
+            # 針對 jsonl：逐行讀取並解析
+            dataset = [json.loads(line) for line in f if line.strip()]
+    else:
+        with open(dataset_path, encoding='utf-8') as f:
+            # 針對 json：一次性讀取整個檔案
+            dataset = json.load(f)
     # Filter out the conversations with less than 2 turns.
     dataset = [data for data in dataset if len(data["conversations"]) >= 2]
     # Only keep conversations where the first message is from a human.
