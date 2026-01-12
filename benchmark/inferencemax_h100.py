@@ -24,14 +24,6 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency):
         '--model', cfg.server.model_id,
         '--base-url', f'{cfg.server.base_url}:{cfg.server.port}',
         '--tokenizer', f'{cfg.server.model_path}/{cfg.server.model_name}',
-        '--dataset-name', 'random',
-        # '--dataset-path', '/tmp/sharegpt_768_x.json',
-        # '--sharegpt-input-len', str(token_lengths.input_len),
-        # '--sharegpt-output-len', str(token_lengths.output_len),
-        # '--sharegpt-range-ratio', '0.8',
-        '--random-input-len', str(token_lengths.input_len),
-        '--random-output-len', str(token_lengths.output_len),
-        '--random-range-ratio', '0.8',
         '--num-prompts', f'{concurrency * 10}',
         '--max-concurrency', str(concurrency),
         '--request-rate', 'inf',
@@ -41,6 +33,21 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency):
         '--result-dir', RESULT_ROOT,
         '--result-filename', 'full_result.json'
     ]
+
+    if cfg.benchmark.dataset_path:
+        cmd.extend([
+            '--dataset-name', 'sharegpt',
+            '--dataset-path', cfg.benchmark.dataset_path,
+            '--sharegpt-output-len', str(token_lengths.output_len),
+        ])
+    else:
+        cmd.extend([
+            '--dataset-name', 'random'
+            '--random-input-len', str(token_lengths.input_len),
+            '--random-output-len', str(token_lengths.output_len),
+            '--random-range-ratio', '0.8',
+        ])
+
 
     logging.info(cmd)
     subprocess.run(
