@@ -41,7 +41,10 @@ def main(cfg: DictConfig) -> None:
         if container.port:
             cfg.server.port = container.port
         if container.name == "none":
-            container.name = f'server_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
+            if cfg.server.name:
+                container.name = cfg.server.name
+            else:
+                container.name = f'server_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
         if container.path == "none":
             logging.info('assume server is running')
         else:
