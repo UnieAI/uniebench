@@ -3,9 +3,11 @@ import subprocess
 import logging
 from hydra import main
 
-def run_container(cfg: DictConfig, container_path: dict, detected = True):
+def run_container(cfg: DictConfig, container_path: dict, service_name, detected = True):
     logging.info(f'start server {container_path}')
     cmd = ['docker', 'compose', '-f', container_path, 'up']
+    if service_name:
+        cmd.append(service_name)
     if detected:
         cmd.append('-d')
     logging.info(cmd)

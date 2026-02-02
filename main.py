@@ -48,7 +48,10 @@ def main(cfg: DictConfig) -> None:
         if container.path == "none":
             logging.info('assume server is running')
         else:
-            run_container(cfg, container.path)
+            service_name = None
+            if 'service_name' in container:
+                service_name = container.service_name
+                run_container(cfg, container.path, service_name)
 
         # check health
         try:
@@ -61,12 +64,17 @@ def main(cfg: DictConfig) -> None:
             stop_container(cfg, container.name)
             continue
 
+        import random
         # run benchmark (inner loop)
         for benchmark_name in cfg.benchmark.name:
             for token_lengths in cfg.benchmark.token_lengths:
-                for concurrency in cfg.benchmark.concurrency:
+                for c_index in range(len(cfg.benchmark.concurrency)):
+                    concurrency = cfg.benchmark.concurrency[c_index]
+                    seed = random.randint(0, 2147483647)
+                    if len(cfg.benchmark.seeds) > 0:
+                        seed = cfg.benchmark.seeds[c_index % len(cfg.benchmark.seeds)]
                     try:
-                        run_benchmark(cfg, benchmark_name, container, token_lengths, concurrency)
+                        run_benchmark(cfg, benchmark_name, container, token_lengths, concurrency, seed)
                     except BaseException as e:
                         logging.error(f'benchmark failed.  name: {benchmark_name}, token_lengths: {token_lengths.input_len}/{token_lengths.output_len}, concurrency: {concurrency}')
                         logging.error(e)

@@ -49,6 +49,16 @@ def export(test_name: str):
     for file_path in files:
         with open(file_path, 'r', encoding='utf8') as f:
             data = json.load(f)
+        
+        if 'remark' not in data:
+            data['remark'] = ''
+        if 'sample_prompt' not in data:
+            data['sample_prompt'] = ''
+        if 'sample_response' not in data:
+            data['sample_response'] = ''
+        if 'seed' not in data:
+            data['seed'] = 'random'
+
         # 加上 benchmark 及日期時間（目錄條件）
         parts = file_path.split(os.sep)
         # 比如 ['./result', '{test_name}', '{benchmark}', '{日期時間}', 'result.json']
@@ -84,11 +94,13 @@ if __name__ == '__main__':
     for f in folders:
         print(f'- {f}')
     selected_folder = input('Enter the test name to export: ').strip()
+    
+    operation_check()
     if selected_folder in folders:
         try:
             export(selected_folder)
             print("export completed.")
-        except:
-            print("export failed.")
+        except Exception as e:
+            print("export failed.", e)
     else:
         print(f'Test name "{selected_folder}" not found in ./results.')

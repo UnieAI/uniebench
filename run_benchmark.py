@@ -5,11 +5,11 @@ from hydra import main
 from benchmark.genai_perf import genai_perf
 from benchmark.inferencemax_h100 import inferencemax_h100
 
-def run_benchmark(cfg: DictConfig, benchmark_name, container, token_lengths, concurrency):
+def run_benchmark(cfg: DictConfig, benchmark_name, container, token_lengths, concurrency, seed):
     if benchmark_name == 'genai-perf':
         genai_perf(cfg, container, token_lengths, concurrency)
     elif benchmark_name == 'inferencemax-h100':
-        inferencemax_h100(cfg, container, token_lengths, concurrency)
+        inferencemax_h100(cfg, container, token_lengths, concurrency, seed)
 
 @main(config_path="config", config_name="config", version_base="1.2")
 def main(cfg: DictConfig) -> None:
@@ -34,7 +34,7 @@ def main(cfg: DictConfig) -> None:
         for token_lengths in cfg.benchmark.token_lengths:
             for concurrency in cfg.benchmark.concurrency:
                 for name in cfg.benchmark.name:
-                    run_benchmark(cfg, name, container, token_lengths, concurrency)
+                    run_benchmark(cfg, name, container, token_lengths, concurrency, seed)
 
 
 if __name__ == "__main__":

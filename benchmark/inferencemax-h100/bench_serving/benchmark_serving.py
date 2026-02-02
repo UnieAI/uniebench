@@ -107,16 +107,50 @@ def sample_sharegpt_requests(
             # 針對 json：一次性讀取整個檔案
             dataset = json.load(f)
     # Filter out the conversations with less than 2 turns.
-    dataset = [data for data in dataset if len(data["conversations"]) >= 2]
-    # Only keep conversations where the first message is from a human.
-    dataset = [
-        (data["conversations"][i]["value"], data["conversations"][i+1]["value"])
-        for data in dataset
-        for i in range(len(data["conversations"]) - 1)
-        if data["conversations"][i]["from"] == "human"
-    ]
+
+    if 'conversations' in dataset[0]:
+        dataset = [data for data in dataset if len(data["conversations"]) >= 2]
+        # Only keep conversations where the first message is from a human.
+        dataset = [
+            (data["conversations"][i]["value"], data["conversations"][i+1]["value"])
+            for data in dataset
+            for i in range(len(data["conversations"]) - 1)
+            if data["conversations"][i]["from"] == "human"
+        ]
+    elif 'prompt' in dataset[0]:
+        completion_key = None
+        for key in ("answer", "completion", "response", "output", "text"):
+            if key in dataset[0]:
+                completion_key = key
+                break
+        if completion_key is None:
+            dataset = [
+                (data["prompt"], "")
+                for data in dataset
+                if data.get("prompt") is not None
+            ]
+        else:
+            dataset = [
+                (data["prompt"], data[completion_key])
+                for data in dataset
+                if data.get("prompt") is not None and data.get(completion_key) is not None
+            ]
+    else:
+        dataset = []
+        pass
+
+    # 如果 num_requests 是 100 或 1000，將 dataset = data[前一半]
+    # 否則，dataset = dataset[後一半]
+    # if num_requests in [100, 1000]:
+    #     print("warm up, use first half dataset")
+    #     dataset = dataset[:len(dataset)//2]
+    # else:
+    #     print("benchmark, use last half dataset")
+    #     dataset = dataset[len(dataset)//2:]
+    print("dataset total size:", len(dataset))
 
     # Shuffle the dataset.
+    # dataset = dataset[:1010]
     random.shuffle(dataset)
 
     # Filter out sequences that are too long or too short
@@ -127,6 +161,7 @@ def sample_sharegpt_requests(
 
         # Tokenize the prompts and completions.
         prompt = dataset[i][0]
+        prompt += f"\nAnswer the question with about {fixed_output_len} words"
         prompt_token_ids = tokenizer(prompt).input_ids
         completion = dataset[i][1]
         completion_token_ids = tokenizer(completion).input_ids
@@ -136,10 +171,13 @@ def sample_sharegpt_requests(
         if prompt_len < 4 or (fixed_output_len is None and output_len < 4):
             # Prune too short sequences.
             continue
-        if prompt_len > 1024 or prompt_len + output_len > 2048:
+        CONTEXT_LENGTH = 2048 # 2048
+        # prompt_len > CONTEXT_LENGTH // 2 or 
+        if prompt_len + fixed_output_len > CONTEXT_LENGTH:
             # Prune too long sequences.
             continue
         filtered_dataset.append((prompt, prompt_len, output_len, None))
+        
     return filtered_dataset
 
 

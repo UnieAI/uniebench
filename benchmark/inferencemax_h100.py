@@ -5,26 +5,30 @@ import sys
 import os
 import json
 import shutil
+import random
+import requests
 from datetime import datetime as dt
 
-def inferencemax_h100(cfg: DictConfig, container, token_lengths, concurrency):
+def inferencemax_h100(cfg: DictConfig, container, token_lengths, concurrency, seed):
     logging.info('run benchmark inferencemax-h100...')
-    benchmark(cfg, token_lengths, concurrency)
+    benchmark(cfg, token_lengths, concurrency, seed)
     logging.info('standardize benchmark result...')
-    benchmark_post_processing(cfg, container, concurrency)
+    benchmark_post_processing(cfg, container, concurrency, seed)
     logging.info('benchcmark completed')
 
-def benchmark(cfg: DictConfig, token_lengths, concurrency):
+def benchmark(cfg: DictConfig, token_lengths, concurrency, seed):
     RESULT_ROOT = f'./results/{cfg.autotest.name}/inferencemax_h100'
     os.makedirs(RESULT_ROOT, exist_ok=True)
 
     cmd = [
         'python3', 'benchmark/inferencemax-h100/bench_serving/benchmark_serving.py',
-        '--backend', 'openai',
+        '--backend', 'openai-chat',
+        '--endpoint', f'/v1/chat/completions',
         '--model', cfg.server.model_id,
         '--base-url', f'{cfg.server.base_url}:{cfg.server.port}',
         '--tokenizer', f'{cfg.server.model_path}/{cfg.server.model_name}',
         '--num-prompts', f'{concurrency * 10}',
+        '--seed', f'{seed}',
         '--max-concurrency', str(concurrency),
         '--request-rate', 'inf',
         '--ignore-eos',
@@ -57,7 +61,7 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency):
         stderr=sys.stderr,
     )
 
-def benchmark_post_processing(cfg: DictConfig, container, concurrency):
+def benchmark_post_processing(cfg: DictConfig, container, concurrency, seed = None):
     RESULT_ROOT = f'./results/{cfg.autotest.name}/inferencemax_h100'
     os.makedirs(RESULT_ROOT, exist_ok=True)
 
@@ -75,6 +79,8 @@ def benchmark_post_processing(cfg: DictConfig, container, concurrency):
         "engine": container.name,
         "tp_size": container.tp_size,
         "benchmark": 'inferencemax-h100',
+        "remark": cfg.server.remark if 'remark' in cfg.server else '',
+        "seed": seed if seed is not None else "random",
 
         "request_count": data['completed'],
         "interval": data['duration'] * 1000, # second to ms
