@@ -11,9 +11,10 @@ operation_count = 0
 def operation_check():
     global operation_count
     operation_count += 1
-    if operation_count > 100:
+    if operation_count > 30:
         operation_count = 0
-        time.sleep(60)
+        print("wait for the google auth limitation...")
+        time.sleep(101)
 
 def export(test_name: str):
     # 1. Google Sheets 權限設置（將 service_account.json 放在腳本同目錄下）
