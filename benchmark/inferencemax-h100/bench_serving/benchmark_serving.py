@@ -531,7 +531,7 @@ def calculate_metrics(
     for i in range(len(outputs)):
         if outputs[i].success:
             output_len = outputs[i].output_tokens
-            if output_len is None:
+            if output_len is None or output_len == 0:
                 # We use the tokenizer to count the number of output tokens
                 # for some serving backends instead of looking at
                 # len(outputs[i].itl) since multiple output tokens may be
@@ -583,6 +583,8 @@ def calculate_metrics(
             "All requests failed. This is likely due to a misconfiguration "
             "on the benchmark arguments.",
             stacklevel=2)
+
+    print('actual_output_lens', actual_output_lens)
     metrics = BenchmarkMetrics(
         completed=completed,
         total_input=total_input,
