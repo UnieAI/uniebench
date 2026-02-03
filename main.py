@@ -71,7 +71,7 @@ def main(cfg: DictConfig) -> None:
                 for c_index in range(len(cfg.benchmark.concurrency)):
                     concurrency = cfg.benchmark.concurrency[c_index]
                     seed = random.randint(0, 2147483647)
-                    if len(cfg.benchmark.seeds) > 0:
+                    if 'seeds' in cfg.benchmark and len(cfg.benchmark.seeds) > 0:
                         seed = cfg.benchmark.seeds[c_index % len(cfg.benchmark.seeds)]
                     try:
                         run_benchmark(cfg, benchmark_name, container, token_lengths, concurrency, seed)

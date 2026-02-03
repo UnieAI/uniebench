@@ -20,10 +20,17 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency, seed):
     RESULT_ROOT = f'./results/{cfg.autotest.name}/inferencemax_h100'
     os.makedirs(RESULT_ROOT, exist_ok=True)
 
+    if cfg.benchmark.endpoint_type == 'chat':
+        backend = 'openai-chat'
+        endpoint = '/v1/chat/completions'
+    else:
+        backend = 'openai'
+        endpoint = '/v1/completions'
+
     cmd = [
         'python3', 'benchmark/inferencemax-h100/bench_serving/benchmark_serving.py',
-        '--backend', 'openai-chat',
-        '--endpoint', f'/v1/chat/completions',
+        '--backend', backend,
+        '--endpoint', endpoint,
         '--model', cfg.server.model_id,
         '--base-url', f'{cfg.server.base_url}:{cfg.server.port}',
         '--tokenizer', f'{cfg.server.model_path}/{cfg.server.model_name}',
@@ -38,7 +45,7 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency, seed):
         '--result-filename', 'full_result.json'
     ]
 
-    if cfg.benchmark.dataset_path:
+    if 'dataset_path' in cfg.benchmark and cfg.benchmark.dataset_path != 'none':
         cmd.extend([
             '--dataset-name', 'sharegpt',
             '--dataset-path', cfg.benchmark.dataset_path,
@@ -46,7 +53,7 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency, seed):
         ])
     else:
         cmd.extend([
-            '--dataset-name', 'random'
+            '--dataset-name', 'random',
             '--random-input-len', str(token_lengths.input_len),
             '--random-output-len', str(token_lengths.output_len),
             '--random-range-ratio', '0.8',
