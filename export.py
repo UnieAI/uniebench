@@ -16,7 +16,8 @@ def operation_check():
         print("wait for the google auth limitation...")
         time.sleep(101)
 
-def export(test_name: str):
+def export(test_name: str, sheet_name: str):
+    print('sheet_name', sheet_name)
     # 1. Google Sheets 權限設置（將 service_account.json 放在腳本同目錄下）
     SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
     SERVICE_ACCOUNT_FILE = 'config/service_account.json'  # 換成你的 json key 路徑
@@ -25,7 +26,17 @@ def export(test_name: str):
     gc = gspread.authorize(credentials)
 
     # 2. 打開 Google Sheet
-    SHEET_ID = '1mQGFurc2fVgQjkZOgnEEeQNgVTSP2hcMP478GZRjob8'
+    with open('sheet_id_list.json', 'r', encoding='utf8') as f:
+        sheet_id_map = json.load(f)
+    if sheet_name not in sheet_id_map:
+        raise ValueError(f'sheet_name "{sheet_name}" not found in sheet_id_list.json')
+    sheet_value = sheet_id_map[sheet_name]
+    if isinstance(sheet_value, str) and '/d/' in sheet_value:
+        SHEET_ID = sheet_value.split('/d/', 1)[1].split('/', 1)[0]
+    else:
+        SHEET_ID = sheet_value
+    print('SHEET_ID', SHEET_ID)
+
     sheet = gc.open_by_key(SHEET_ID)
     now_str = datetime.now().strftime('%Y%m%d_%H%M%S')
 
@@ -52,10 +63,6 @@ def export(test_name: str):
         
         if 'remark' not in data:
             data['remark'] = ''
-        if 'sample_prompt' not in data:
-            data['sample_prompt'] = ''
-        if 'sample_response' not in data:
-            data['sample_response'] = ''
         if 'seed' not in data:
             data['seed'] = 'random'
 
@@ -88,6 +95,15 @@ def export(test_name: str):
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
 
+    # 讀取 sheet_id_list.json，讓使用者選擇輸出目的地
+    with open('sheet_id_list.json', 'r', encoding='utf8') as f:
+        sheet_id_map = json.load(f)
+    sheet_names = list(sheet_id_map.keys())
+    print('Available sheet names:')
+    for name in sheet_names:
+        print(f'- {name}')
+    selected_sheet = input('Enter the sheet name to export: ').strip()
+
     # 找到 ./result 下面一層資料夾有哪些，列出選項讓使用者輸入
     folders = next(os.walk('./results'))[1]
     print('Available test names:')
@@ -96,9 +112,11 @@ if __name__ == '__main__':
     selected_folder = input('Enter the test name to export: ').strip()
     
     operation_check()
-    if selected_folder in folders:
+    if selected_sheet not in sheet_names:
+        print(f'Sheet name "{selected_sheet}" not found in sheet_id_list.json.')
+    elif selected_folder in folders:
         try:
-            export(selected_folder)
+            export(selected_folder, selected_sheet)
             print("export completed.")
         except Exception as e:
             print("export failed.", e)

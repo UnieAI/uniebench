@@ -83,7 +83,7 @@ def main(cfg: DictConfig) -> None:
         stop_container(cfg, container.name)
 
     # export to google-sheet
-    export(cfg.autotest.name)
+    export(cfg.autotest.name, cfg.autotest.sheet_name)
     logging.info('export completed')
     logging.info(f'or you can see the full result under ./results/{cfg.autotest.name}')
 
