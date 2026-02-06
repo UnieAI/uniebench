@@ -38,8 +38,15 @@ def main(cfg: DictConfig) -> None:
 
     # start server (outer loop)
     for container in cfg.server.container:
-        if container.port:
+        if 'port' in container:
             cfg.server.port = container.port
+        if 'model_name' in container:
+            cfg.server.model_name = container.model_name
+        if 'model_id' in container:
+            cfg.server.model_id = container.model_id
+        if 'endpoint_type' in container:
+            cfg.benchmark.endpoint_type = container.endpoint_type
+
         if container.name == "none":
             if cfg.server.name:
                 container.name = cfg.server.name
