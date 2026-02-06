@@ -1,0 +1,276 @@
+x-sglang: &sglang-config
+  image: lmsysorg/sglang:dev
+  ipc: host
+  # restart: always
+  volumes:
+    - ~/models/:/weights
+  environment:
+    LD_LIBRARY_PATH: '/usr/local/nvidia/lib64:/usr/local/nvidia/lib:/usr/lib/x86_64-linux-gnu'
+    CUDA_VISIBLE_DEVICES: '0'
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            device_ids: ['0']
+            capabilities: [gpu]
+
+x-vllm-base: &vllm-config
+  image: vllm/vllm-openai:latest-cu130
+  ipc: host
+  # restart: always
+  volumes:
+    - ~/models:/weights
+  environment: 
+    LD_LIBRARY_PATH: '/usr/local/nvidia/lib64:/usr/local/nvidia/lib:/usr/lib/x86_64-linux-gnu'
+    CUDA_VISIBLE_DEVICES: '0'
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            device_ids: ['0']
+            capabilities: [gpu]
+
+x-tensorrt-llm-base: &tensorrt-llm-config
+  image: nvcr.io/nvidia/tensorrt-llm/release:1.3.0rc2
+  ipc: host
+  # restart: always
+  volumes:
+    - ~/models:/weights
+  environment: 
+    LD_LIBRARY_PATH: '/usr/local/nvidia/lib64:/usr/local/nvidia/lib:/usr/lib/x86_64-linux-gnu'
+    CUDA_VISIBLE_DEVICES: '0'
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            device_ids: ['0']
+            capabilities: [gpu]
+    # --ulimit memlock=-1 --ulimit stack=67108864
+
+x-lmdeploy-base: &lmdeploy-config
+  container_name: lmdeploy-server
+  image: openmmlab/lmdeploy:latest-cu12.8
+  ipc: host
+  # restart: always
+  volumes:
+    - ~/models:/weights
+  environment:
+    LD_LIBRARY_PATH: '/usr/local/nvidia/lib64:/usr/local/nvidia/lib:/usr/lib/x86_64-linux-gnu'
+    CUDA_VISIBLE_DEVICES: '0'
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            device_ids: ['0']
+            capabilities: [gpu]
+            
+# =====================================================
+services:
+  # sglang ------------------------
+  sglang-Mistral-7B-v0.3:
+    <<: *sglang-config
+    container_name: sglang_mistra
+    ports:
+      - "30001:30000"
+    command: >
+      python3 -m sglang.launch_server
+      --model-path /weights/mistralai/Mistral-7B-v0.3
+      --served-model-name test
+      --host 0.0.0.0
+      --port 30000
+      --mem-fraction-static 0.9
+      --max-running-requests 512
+
+  sglang-gpt-oss-120b:
+    <<: *sglang-config
+    container_name: sglang_gptoss
+    ports:
+      - "30002:30000"
+    # entrypoint: bash
+    # command: ['-c', 'sleep infinity']
+    command: >
+      python3 -m sglang.launch_server
+      --model-path /weights/openai/gpt-oss-120b
+      --served-model-name test
+      --host 0.0.0.0
+      --port 30000
+      --mem-fraction-static 0.9
+      --max-running-requests 512
+
+
+  # vllm ------------------------
+  vllm-Mistral-7B-v0.3:
+    <<: *vllm-config
+    container_name: vllm_mistra
+    ports:
+      - "30003:30000"
+    command: >
+      --model /weights/mistralai/Mistral-7B-v0.3
+      --served-model-name test
+      --tensor-parallel-size 1
+      --port 30000
+      --gpu-memory-utilization 0.9
+      --enable-prefix-caching
+      --max-num-seqs 512
+      
+  vllm-gpt-oss-120b:
+    <<: *vllm-config
+    container_name: vllm_gptoss
+    ports:
+      - "30004:30000"
+    command: >
+      --model /weights/openai/gpt-oss-120b
+      --served-model-name test
+      --tensor-parallel-size 1
+      --port 30000
+      --gpu-memory-utilization 0.9
+      --enable-prefix-caching
+      --max-num-seqs 512
+
+  # lmdeploy ------------------------
+  lmdeploy-Mistral-7B-v0.3:
+    <<: *lmdeploy-config
+    container_name: lmdeploy_mistra
+    ports:
+      - "30005:30000"
+    command: >
+      lmdeploy serve api_server /weights/mistralai/Mistral-7B-v0.3
+      --server-port 30000
+      --tp 1
+      --model-name test
+      --backend turbomind
+      --cache-max-entry-count 0.9
+      --enable-prefix-caching
+      --max-batch-size 512
+      
+  lmdeploy-gpt-oss-120b:
+    <<: *lmdeploy-config
+    container_name: lmdeploy_gptoss
+    ports:
+      - "30006:30000"
+    command: >
+      lmdeploy serve api_server /weights/openai/gpt-oss-120b
+      --server-port 30000
+      --tp 1
+      --enable-prefix-caching
+      --model-name test
+      --backend turbomind
+      --cache-max-entry-count 0.9
+      --enable-prefix-caching
+      --max-batch-size 512
+      
+  # tensorrt-llm ------------------------
+  tensorrt-llm-Mistral-7B-v0.3:
+    <<: *tensorrt-llm-config
+    container_name: tensorrt-llm_mistra
+    ports:
+      - "30007:30000"
+    command: >
+      trtllm-serve /weights/mistralai/Mistral-7B-v0.3
+      --host 0.0.0.0
+      --port 30000
+      --tp_size 1
+      --kv_cache_free_gpu_memory_fraction 0.9
+      --max_batch_size 512
+      
+  tensorrt-llm-gpt-oss-120b:
+    <<: *tensorrt-llm-config
+    container_name: tensorrt-llm_gptoss
+    ports:
+      - "30008:30000"
+    command: >
+      trtllm-serve /weights/openai/gpt-oss-120b
+      --host 0.0.0.0
+      --port 30000
+      --tp_size 1
+      --kv_cache_free_gpu_memory_fraction 0.9
+      --max_batch_size 512
+
+  # Qwen3-8B
+  sglang-qwen3-8b:
+    <<: *sglang-config
+    container_name: sglang_qwen38b
+    ports:
+      - "30001:30000"
+    command: >
+      python3 -m sglang.launch_server
+      --model-path /weights/Qwen/Qwen3-8B
+      --served-model-name test
+      --host 0.0.0.0
+      --port 30000
+      --mem-fraction-static 0.9
+      --max-running-requests 512
+
+  # vllm ------------------------
+  vllm-qwen3-8b:
+    <<: *vllm-config
+    container_name: vllm_qwen38b
+    ports:
+      - "30002:30000"
+    command: >
+      --model /weights/Qwen/Qwen3-8B
+      --served-model-name test
+      --tensor-parallel-size 1
+      --port 30000
+      --gpu-memory-utilization 0.9
+      --enable-prefix-caching
+      --max-num-seqs 512
+      
+  # lmdeploy ------------------------
+  lmdeploy-qwen3-8b:
+    <<: *lmdeploy-config
+    container_name: lmdeploy_qwen38b
+    ports:
+      - "30003:30000"
+    command: >
+      lmdeploy serve api_server /weights/Qwen/Qwen3-8B
+      --server-port 30000
+      --tp 1
+      --model-name test
+      --backend turbomind
+      --cache-max-entry-count 0.9
+      --enable-prefix-caching
+      --max-batch-size 512
+      
+  # tensorrt-llm ------------------------
+  tensorrt-llm-qwen3-8b:
+    <<: *tensorrt-llm-config
+    container_name: tensorrt-llm_qwen38b
+    ports:
+      - "30004:30000"
+    command: >
+      trtllm-serve /weights/Qwen/Qwen3-8B
+      --host 0.0.0.0
+      --port 30000
+      --tp_size 1
+      --kv_cache_free_gpu_memory_fraction 0.9
+      --max_batch_size 512
+            
+  vllm-turbomind-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vllm-turbomind:local
+    container_name: vllm-turbomind-dev
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all # 或指定數量，例如 1, 2
+              capabilities: [gpu]
+    ipc: host
+    tty: true
+    stdin_open: true
+    command: bash
+    volumes:
+      - ~/models:/weights
+    environment:
+      LD_LIBRARY_PATH: '/usr/local/nvidia/lib64:/usr/local/nvidia/lib:/usr/lib/x86_64-linux-gnu'
+      CUDA_VISIBLE_DEVICES: '0'
+    ports:
+      - "30005:30000"

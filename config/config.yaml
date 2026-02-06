@@ -1,13 +1,15 @@
 autotest:
-    # google worksheet 的工作表名稱
-    name: A100-vllm-kernel-iter
+    name: Pro6000-test-2048 # or comment out this line to use random name
+    sheet_name: Benchmark-Pro6000
 server:
-    platform: A100  # 測試平台
-    id: test1       # 使用 default_config.server 底下，對應的 server
+    platform: Pro6000
+    id: all-in-one-qwen3-8b
+    # id: all-in-one-mistral-7b-and-gpt-oss-120b
 
 benchmark:
-    id: test1       # 使用 default_config.benchmark 底下，對應的 benchmark 設定
+    id: random-8-512-common
 
+# you should only edit the config above
 healthcheck:
     url: "${server.base_url}:${server.port}/health"
     timeout: 5
@@ -16,33 +18,158 @@ healthcheck:
 
 default_config:
     server:
-        - id: test1
+        - id: all-in-one-mistral-7b-and-gpt-oss-120b
           config:
             container:
-                - path: none            # docker-compose.yml 路徑，或輸入 none 代表 server 已經在外部啟動
-                  service_name: none    # 如果 docker-compose.yml 有多個 service，需要填入 service_name
-                  name: vllm-iter1      # service 名稱，通常是推理引擎的名字+你做了什麼改動
-                  tp_size: 1            # 用幾顆 gpu 跑
-                  port: 12470           # 輸出的 port
-            port: 0                     # 不用改
+                # sglang ----------------------------------------------------------------
+                - path: /home/ubuntu/workspace/jeff/Benchmark-Autotest/docker-compose.yml
+                  service_name: sglang-Mistral-7B-v0.3
+                  name: sglang_mistra
+                  tp_size: 1
+                  port: 30001
+                  endpoint_type: completions
+                  model_name: mistralai/Mistral-7B-v0.3
+                  model_id: test
+
+                # failed
+                # - path: /home/ubuntu/workspace/jeff/Benchmark-Autotest/docker-compose.yml
+                #   service_name: sglang-gpt-oss-120b
+                #   name: sglang
+                #   tp_size: 1
+                #   port: 30002
+                #   endpoint_type: chat
+                #   model_name: openai/gpt-oss-120b
+                #   model_id: test
+
+                # vllm ----------------------------------------------------------------
+                - path: /home/ubuntu/workspace/jeff/Benchmark-Autotest/docker-compose.yml
+                  service_name: vllm-Mistral-7B-v0.3
+                  name: vllm_mistra
+                  tp_size: 1
+                  port: 30003
+                  endpoint_type: completions
+                  model_name: mistralai/Mistral-7B-v0.3
+                  model_id: test
+
+                - path: /home/ubuntu/workspace/jeff/Benchmark-Autotest/docker-compose.yml
+                  service_name: vllm-gpt-oss-120b
+                  name: vllm_gptoss
+                  tp_size: 1
+                  port: 30004
+                  endpoint_type: chat
+                  model_name: openai/gpt-oss-120b
+                  model_id: test
+
+                # lmdeploy ----------------------------------------------------------------
+                - path: /home/ubuntu/workspace/jeff/Benchmark-Autotest/docker-compose.yml
+                  service_name: lmdeploy-Mistral-7B-v0.3
+                  name: lmdeploy_mistra
+                  tp_size: 1
+                  port: 30005
+                  endpoint_type: completions
+                  model_name: mistralai/Mistral-7B-v0.3
+                  model_id: test
+
+                - path: /home/ubuntu/workspace/jeff/Benchmark-Autotest/docker-compose.yml
+                  service_name: lmdeploy-gpt-oss-120b
+                  name: lmdeploy_gptoss
+                  tp_size: 1
+                  port: 30006
+                  endpoint_type: chat
+                  model_name: openai/gpt-oss-120b
+                  model_id: test
+
+                # tensorrt-llm ----------------------------------------------------------------
+                - path: /home/ubuntu/workspace/jeff/Benchmark-Autotest/docker-compose.yml
+                  service_name: tensorrt-llm-Mistral-7B-v0.3
+                  name: tensorrt-llm_mistra
+                  tp_size: 1
+                  port: 30007
+                  endpoint_type: completions
+                  model_name: mistralai/Mistral-7B-v0.3
+                  model_id: Mistral-7B-v0.3
+
+                - path: /home/ubuntu/workspace/jeff/Benchmark-Autotest/docker-compose.yml
+                  service_name: tensorrt-llm-gpt-oss-120b
+                  name: tensorrt-llm_gptoss
+                  tp_size: 1
+                  port: 30008
+                  endpoint_type: chat
+                  model_name: openai/gpt-oss-120b
+                  model_id: gpt-oss-120b
+
+            port: 0
             base_url: http://localhost
-            model_path: /mnt/models     # 模型路徑
-            model_name: Qwen/Qwen3-8B   # 模型名稱， 路徑/名稱 會是 model 的具體位置
-            model_id: /mnt/models/Qwen/Qwen3-8B/    # model_id，呼叫 api 時使用
+            model_path: /home/ubuntu/models
+            model_name: none
+            model_id: none
+
+        # ===================================
+        - id: all-in-one-qwen3-8b
+          config:
+            container:
+                # sglang ----------------------------------------------------------------
+                - path: /home/ubuntu/workspace/jeff/Benchmark-Autotest/docker-compose.yml
+                  service_name: sglang-qwen3-8b
+                  name: sglang_qwen38b
+                  tp_size: 1
+                  port: 30001
+                  endpoint_type: completions
+                  model_name: Qwen/Qwen3-8B
+                  model_id: test
+
+                # vllm ----------------------------------------------------------------
+                - path: /home/ubuntu/workspace/jeff/Benchmark-Autotest/docker-compose.yml
+                  service_name: vllm-qwen3-8b
+                  name: vllm_qwen38b
+                  tp_size: 1
+                  port: 30002
+                  endpoint_type: completions
+                  model_name: Qwen/Qwen3-8B
+                  model_id: test
+
+                # lmdeploy ----------------------------------------------------------------
+                - path: /home/ubuntu/workspace/jeff/Benchmark-Autotest/docker-compose.yml
+                  service_name: lmdeploy-qwen3-8b
+                  name: lmdeploy_qwen38b
+                  tp_size: 1
+                  port: 30003
+                  endpoint_type: completions
+                  model_name: Qwen/Qwen3-8B
+                  model_id: test
+
+                # tensorrt-llm ----------------------------------------------------------------
+                - path: /home/ubuntu/workspace/jeff/Benchmark-Autotest/docker-compose.yml
+                  service_name: tensorrt-llm-qwen3-8b
+                  name: tensorrt-llm_qwen38b
+                  tp_size: 1
+                  port: 30004
+                  endpoint_type: completions
+                  model_name: Qwen/Qwen3-8B
+                  model_id: Qwen3-8B
+
+            port: 0
+            base_url: http://localhost
+            model_path: /home/ubuntu/models
+            model_name: none
+            model_id: none
     benchmark:
-        - id: test1
+        - id: random-8-512-common
           config:
             name:
-                - inferencemax-h100             # 目前只能用 inferencemax-h100
-            endpoint_type: chat                 # 可選 chat 或 completions，注意模型是否支援
-            model_name: ${server.model_name}    # 不用改
-            dataset_path: ./benchmark/datasets/MaziyarPanahi/Synthia-Coder-v1.5-I-sharegpt.json # dataset 路徑，移除此欄位的話會使用 random
+                - inferencemax-h100
+            endpoint_type: none
+            model_name: ${server.model_name}
             token_lengths:
-                - input_len: 128                # 輸入跟輸出的長度，可以一次測試多個
-                  output_len: 1024
-                - input_len: 768
-                  output_len: 768
+                - input_len: 128
+                  output_len: 2048
+                - input_len: 2048
+                  output_len: 128
             concurrency:
-                - 1                            # 一次有幾個使用者同時跑，可以一次測試多個
-                - 8
+                # - 8
+                # - 256
                 - 512
+            seeds:
+                # - 2791784335
+                # - 3627711926
+                - 1143885486
