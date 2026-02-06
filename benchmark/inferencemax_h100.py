@@ -34,7 +34,7 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency, seed):
         '--model', cfg.server.model_id,
         '--base-url', f'{cfg.server.base_url}:{cfg.server.port}',
         '--tokenizer', f'{cfg.server.model_path}/{cfg.server.model_name}',
-        '--num-prompts', f'{concurrency * 10}',
+        '--num-prompts', f'{concurrency * 4}',
         '--seed', f'{seed}',
         '--max-concurrency', str(concurrency),
         '--request-rate', 'inf',
@@ -56,7 +56,7 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency, seed):
             '--dataset-name', 'random',
             '--random-input-len', str(token_lengths.input_len),
             '--random-output-len', str(token_lengths.output_len),
-            '--random-range-ratio', '0.8',
+            '--random-range-ratio', '1',
         ])
 
 
