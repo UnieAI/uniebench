@@ -49,6 +49,7 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency, seed):
         cmd.extend([
             '--dataset-name', 'sharegpt',
             '--dataset-path', cfg.benchmark.dataset_path,
+            '--sharegpt-input-len', str(token_lengths.input_len),
             '--sharegpt-output-len', str(token_lengths.output_len),
         ])
     else:

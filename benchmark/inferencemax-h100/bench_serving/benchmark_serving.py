@@ -95,17 +95,11 @@ def sample_sharegpt_requests(
     dataset_path: str,
     num_requests: int,
     tokenizer: PreTrainedTokenizerBase,
+    fixed_input_len: Optional[int] = None,
     fixed_output_len: Optional[int] = None,
 ) -> List[Tuple[str, int, int, None]]:
     # Load the dataset.
-    if dataset_path.endswith('.jsonl'):
-        with open(dataset_path, encoding='utf-8') as f:
-            # 針對 jsonl：逐行讀取並解析
-            dataset = [json.loads(line) for line in f if line.strip()]
-    else:
-        with open(dataset_path, encoding='utf-8') as f:
-            # 針對 json：一次性讀取整個檔案
-            dataset = json.load(f)
+    dataset = load_sharegpt_dataset(dataset_path)
     # Filter out the conversations with less than 2 turns.
 
     if 'conversations' in dataset[0]:
@@ -171,14 +165,42 @@ def sample_sharegpt_requests(
         if prompt_len < 4 or (fixed_output_len is None and output_len < 4):
             # Prune too short sequences.
             continue
-        CONTEXT_LENGTH = 2048 # 2048
-        # prompt_len > CONTEXT_LENGTH // 2 or 
-        if prompt_len + fixed_output_len > CONTEXT_LENGTH:
-            # Prune too long sequences.
-            continue
+        # INPUT_RATIO = 0.8
+        # if fixed_input_len * INPUT_RATIO <= prompt_len and prompt_len <= fixed_input_len:
         filtered_dataset.append((prompt, prompt_len, output_len, None))
-        
+    print("filtered dataset size:", len(filtered_dataset))
     return filtered_dataset
+
+
+def load_sharegpt_dataset(dataset_path: str) -> List[Dict[str, Any]]:
+    if os.path.isdir(dataset_path):
+        parquet_files = [
+            os.path.join(dataset_path, name)
+            for name in sorted(os.listdir(dataset_path))
+            if name.endswith(".parquet")
+        ]
+        if not parquet_files:
+            raise ValueError(
+                f"No parquet files found in dataset_path directory: {dataset_path}"
+            )
+        dataset: List[Dict[str, Any]] = []
+        for parquet_path in parquet_files:
+            df = pd.read_parquet(parquet_path)
+            dataset.extend(df.to_dict(orient="records"))
+        return dataset
+
+    if dataset_path.endswith(".parquet"):
+        df = pd.read_parquet(dataset_path)
+        return df.to_dict(orient="records")
+
+    if dataset_path.endswith(".jsonl"):
+        with open(dataset_path, encoding="utf-8") as f:
+            # 針對 jsonl：逐行讀取並解析
+            return [json.loads(line) for line in f if line.strip()]
+
+    with open(dataset_path, encoding="utf-8") as f:
+        # 針對 json：一次性讀取整個檔案
+        return json.load(f)
 
 
 def sample_burstgpt_requests(
@@ -945,6 +967,7 @@ def main(args: argparse.Namespace):
             dataset_path=args.dataset,
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
+            fixed_input_len=args.sharegpt_input_len,
             fixed_output_len=args.sharegpt_output_len,
         )
 
@@ -953,6 +976,7 @@ def main(args: argparse.Namespace):
             dataset_path=args.dataset_path,
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
+            fixed_input_len=args.sharegpt_input_len,
             fixed_output_len=args.sharegpt_output_len,
         )
 
@@ -1320,6 +1344,12 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="Output length for each request. Overrides the output length "
+        "from the ShareGPT dataset.")
+    sharegpt_group.add_argument(
+        "--sharegpt-input-len",
+        type=int,
+        default=None,
+        help="Input length for each request. Overrides the output length "
         "from the ShareGPT dataset.")
 
     random_group = parser.add_argument_group("random dataset options")
