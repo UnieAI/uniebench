@@ -58,18 +58,78 @@ def compose_project_name(info: ComposeInfo) -> str:
     return f"autotest_{slug}"
 
 
+def diagnose_port_usage(port: int) -> str:
+    snippets: list[str] = []
+    commands = [
+        (
+            "lsof",
+            ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"],
+        ),
+        (
+            "ss listen",
+            ["ss", "-H", "-ltn", f"sport = :{port}"],
+        ),
+        (
+            "ss all tcp",
+            ["ss", "-H", "-tan", f"sport = :{port}"],
+        ),
+        (
+            "docker ps (publish filter)",
+            [
+                "docker",
+                "ps",
+                "--filter",
+                f"publish={port}",
+                "--format",
+                "table {{.ID}}\t{{.Names}}\t{{.Ports}}\t{{.Status}}",
+            ],
+        ),
+    ]
+    for label, cmd in commands:
+        try:
+            result = subprocess.run(
+                cmd,
+                check=False,
+                text=True,
+                capture_output=True,
+            )
+        except FileNotFoundError:
+            snippets.append(f"[{label}] command not found: {cmd[0]}")
+            continue
+        output = (result.stdout or "").strip()
+        error = (result.stderr or "").strip()
+        if output:
+            snippets.append(f"[{label}]\n{output}")
+        elif error:
+            snippets.append(f"[{label} stderr]\n{error}")
+    return "\n".join(snippets)
+
+
 def wait_for_port_free(port: int, timeout_sec: int) -> None:
     deadline = time.time() + timeout_sec
+    owner_hint_logged = False
     while time.time() < deadline:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            # SO_REUSEADDR avoids false "busy" results from transient TCP states
+            # (e.g., TIME_WAIT) while still failing when another process listens.
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 sock.bind(("127.0.0.1", port))
                 return
             except OSError:
                 remaining = max(0, int(deadline - time.time()))
                 LOG.info("[wait] port %s is busy, remaining=%ss", port, remaining)
+                if not owner_hint_logged:
+                    details = diagnose_port_usage(port)
+                    if details:
+                        LOG.info("[wait] port %s diagnostic:\n%s", port, details)
+                    owner_hint_logged = True
         time.sleep(1)
-    raise TimeoutError(f"Port {port} is still busy after {timeout_sec}s")
+    details = diagnose_port_usage(port)
+    detail_text = f"\n{details}" if details else ""
+    raise TimeoutError(
+        f"Port {port} is still busy after {timeout_sec}s{detail_text}"
+    )
 
 
 def setup_logging(log_level: str, log_file: Path | None) -> None:
@@ -117,9 +177,11 @@ def find_model_path(command: str | list[str] | None) -> str | None:
             tokens = command.split()
 
     for i, token in enumerate(tokens):
-        if token == "--model" and i + 1 < len(tokens):
+        if token in {"--model", "--model-path"} and i + 1 < len(tokens):
             return tokens[i + 1]
         if token.startswith("--model="):
+            return token.split("=", 1)[1]
+        if token.startswith("--model-path="):
             return token.split("=", 1)[1]
 
     # Support `vllm serve <model_path>` style command.
@@ -169,7 +231,7 @@ def parse_compose_with_docker(compose_file: Path, root: Path) -> ComposeInfo:
     if host_port is None:
         raise RuntimeError(f"Unable to extract host port from {compose_file}")
     if not tokenizer:
-        raise RuntimeError(f"Unable to extract --model from {compose_file}")
+        raise RuntimeError(f"Unable to extract model path from {compose_file}")
 
     return ComposeInfo(
         compose_file=compose_file,
@@ -193,10 +255,14 @@ def parse_compose_fallback(compose_file: Path) -> ComposeInfo:
         raise RuntimeError(f"Unable to extract host port from {compose_file}")
     host_port = int(port_match.group(1))
 
-    model_match = re.search(r"--model(?:=|\s+)([^\s\"']+)", content)
-    if not model_match:
-        raise RuntimeError(f"Unable to extract --model from {compose_file}")
-    tokenizer = model_match.group(1)
+    model_match = re.search(r"--model(?:-path)?(?:=|\s+)([^\s\"']+)", content)
+    if model_match:
+        tokenizer = model_match.group(1)
+    else:
+        vllm_match = re.search(r"vllm\s+serve\s+([^\s\"'\\]+)", content)
+        if not vllm_match:
+            raise RuntimeError(f"Unable to extract model path from {compose_file}")
+        tokenizer = vllm_match.group(1)
 
     return ComposeInfo(
         compose_file=compose_file,
