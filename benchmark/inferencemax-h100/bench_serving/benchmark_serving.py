@@ -324,6 +324,117 @@ def sample_vision_arena_requests(
     return sampled_requests
 
 
+def _as_text(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        return text if text else None
+    if isinstance(value, list):
+        parts = [item.strip() for item in value if isinstance(item, str) and item.strip()]
+        if parts:
+            return "\n".join(parts)
+    return None
+
+
+def _extract_text_from_turn(turn: Any) -> Optional[str]:
+    if isinstance(turn, str):
+        return _as_text(turn)
+    if not isinstance(turn, dict):
+        return None
+    for key in ("value", "content", "text", "message"):
+        text = _as_text(turn.get(key))
+        if text:
+            return text
+    return None
+
+
+def _extract_prompt_completion_from_turns(
+    turns: Any,
+) -> Tuple[Optional[str], Optional[str]]:
+    if not isinstance(turns, list) or len(turns) < 2:
+        return None, None
+
+    user_roles = {"user", "human"}
+    assistant_roles = {"assistant", "gpt", "bot", "model"}
+    prompt: Optional[str] = None
+    completion: Optional[str] = None
+
+    for turn in turns:
+        if not isinstance(turn, dict):
+            continue
+        role = turn.get("role", turn.get("from", turn.get("speaker")))
+        role_lower = str(role).lower() if role is not None else ""
+        text = _extract_text_from_turn(turn)
+        if not text:
+            continue
+        if prompt is None and role_lower in user_roles:
+            prompt = text
+            continue
+        if completion is None and role_lower in assistant_roles:
+            completion = text
+        if prompt is not None and completion is not None:
+            break
+
+    if prompt is None or completion is None:
+        text_turns = [t for t in (_extract_text_from_turn(turn) for turn in turns) if t]
+        if prompt is None and text_turns:
+            prompt = text_turns[0]
+        if completion is None and len(text_turns) >= 2:
+            completion = text_turns[1]
+
+    return prompt, completion
+
+
+def _extract_hf_prompt_completion(
+    data: Dict[str, Any],
+    fixed_output_len: Optional[int],
+) -> Tuple[Optional[str], Optional[str]]:
+    # Explicit support for RAG-style rows: {context, question, answer}.
+    context = _as_text(data.get("context"))
+    question = _as_text(data.get("question"))
+    answer = _as_text(data.get("answer"))
+    if question:
+        if context:
+            prompt = f"Context:\n{context}\n\nQuestion:\n{question}"
+        else:
+            prompt = question
+        if answer is None and fixed_output_len is not None:
+            answer = ""
+        if answer is not None or fixed_output_len is not None:
+            return prompt, answer
+
+    for key in ("conversations", "messages", "dialogue", "chat"):
+        if key in data:
+            prompt, completion = _extract_prompt_completion_from_turns(data[key])
+            if prompt and (completion is not None or fixed_output_len is not None):
+                return prompt, completion
+
+    prompt_keys = ("prompt", "question", "instruction", "input", "query", "user")
+    completion_keys = ("answer", "response", "output", "completion", "target", "assistant")
+
+    prompt = None
+    for key in prompt_keys:
+        prompt = _as_text(data.get(key))
+        if prompt:
+            break
+    if not prompt:
+        prompt = _as_text(data.get("text"))
+    if not prompt:
+        return None, None
+
+    completion = None
+    for key in completion_keys:
+        completion = _as_text(data.get(key))
+        if completion:
+            break
+
+    if completion is None and fixed_output_len is not None:
+        completion = ""
+
+    return prompt, completion
+
+
 def sample_hf_requests(
     dataset_path: str,
     dataset_subset: Optional[str],
@@ -350,21 +461,29 @@ def sample_hf_requests(
                            name=dataset_subset,
                            split=dataset_split,
                            streaming=True)
-    assert "conversations" in dataset.features, (
-        "HF Dataset must have 'conversations' column.")
-    filter_func = lambda x: len(x["conversations"]) >= 2
-    filtered_dataset = dataset.shuffle(seed=random_seed).filter(filter_func)
+    feature_names = []
+    if isinstance(dataset.features, dict):
+        feature_names = list(dataset.features.keys())
+    if "conversations" not in feature_names:
+        warnings.warn(
+            "HF dataset does not expose a 'conversations' column; "
+            "trying automatic prompt/answer schema detection."
+        )
+
+    shuffled_dataset = dataset.shuffle(seed=random_seed)
     sampled_requests: List[Tuple[str, int, int, Dict[str,
                                                      Collection[str]]]] = []
-    for data in filtered_dataset:
+    for data in shuffled_dataset:
         if len(sampled_requests) == num_requests:
             break
 
+        prompt, completion = _extract_hf_prompt_completion(data, fixed_output_len)
+        if prompt is None or (completion is None and fixed_output_len is None):
+            continue
+
         # Tokenize the prompts and completions.
-        prompt = data["conversations"][0]["value"]
         prompt_token_ids = tokenizer(prompt).input_ids
-        completion = data["conversations"][1]["value"]
-        completion_token_ids = tokenizer(completion).input_ids
+        completion_token_ids = tokenizer(completion).input_ids if completion else []
         prompt_len = len(prompt_token_ids)
         output_len = len(completion_token_ids
                          ) if fixed_output_len is None else fixed_output_len
@@ -406,6 +525,15 @@ def sample_hf_requests(
             mm_content = None
 
         sampled_requests.append((prompt, prompt_len, output_len, mm_content))
+
+    if not sampled_requests:
+        feature_text = ", ".join(feature_names) if feature_names else str(dataset.features)
+        raise ValueError(
+            "Unable to sample HF requests from dataset. "
+            f"Expected chat turns in one of "
+            f"['conversations','messages','dialogue','chat'] or flat prompt/answer fields. "
+            f"Available features: {feature_text}"
+        )
 
     return sampled_requests
 

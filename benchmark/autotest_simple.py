@@ -159,6 +159,13 @@ def parse_concurrency(raw: str) -> list[int]:
     return values
 
 
+def infer_dataset_name(dataset_path: str) -> str:
+    lower = dataset_path.lower()
+    if lower.endswith(".json") or lower.endswith(".jsonl"):
+        return "sharegpt"
+    return "hf"
+
+
 def find_model_path(command: str | list[str] | None) -> str | None:
     if command is None:
         return None
@@ -303,7 +310,7 @@ def wait_for_health(port: int, timeout_sec: int, interval_sec: int) -> None:
 def run_benchmark_for_concurrency(
     root: Path,
     benchmark_script: Path,
-    dataset_path: Path,
+    dataset_path: str,
     result_dir: Path,
     model_name: str,
     info: ComposeInfo,
@@ -312,11 +319,11 @@ def run_benchmark_for_concurrency(
     seed: int,
     python_bin: str,
 ) -> None:
-    dataset_path_str = str(dataset_path.resolve())
-    if dataset_path.suffix.lower() in {".json", ".jsonl"}:
-        dataset_name = "sharegpt"
+    dataset_name = infer_dataset_name(dataset_path)
+    if dataset_name == "sharegpt":
+        dataset_path_str = str(Path(dataset_path).expanduser().resolve())
     else:
-        dataset_name = "hf"
+        dataset_path_str = dataset_path
 
     result_filename = f"{info.service_name}.{concurrency}.json"
     cmd = [
@@ -425,8 +432,7 @@ def configure_argparse() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--dataset-path",
-        type=Path,
-        default=root / "data/ShareGPT_V3_unfiltered_cleaned_split.json",
+        default=str(root / "data/ShareGPT_V3_unfiltered_cleaned_split.json"),
     )
     parser.add_argument(
         "--result-dir",
@@ -482,7 +488,7 @@ def main() -> int:
     root = Path(__file__).resolve().parents[1]
     service_dir = args.service_dir
     benchmark_script = args.benchmark_script
-    dataset_path = args.dataset_path
+    dataset_path = args.dataset_path.strip()
     result_dir = args.result_dir
     concurrency_values = parse_concurrency(args.concurrency)
 
@@ -490,8 +496,13 @@ def main() -> int:
         raise RuntimeError(f"service-dir not found: {service_dir}")
     if not benchmark_script.exists():
         raise RuntimeError(f"benchmark-script not found: {benchmark_script}")
-    if not dataset_path.exists():
-        raise RuntimeError(f"dataset-path not found: {dataset_path}")
+    if not dataset_path:
+        raise RuntimeError("dataset-path is empty")
+    if infer_dataset_name(dataset_path) == "sharegpt":
+        dataset_path_obj = Path(dataset_path).expanduser()
+        if not dataset_path_obj.exists():
+            raise RuntimeError(f"dataset-path not found: {dataset_path_obj}")
+        dataset_path = str(dataset_path_obj.resolve())
     result_dir.mkdir(parents=True, exist_ok=True)
 
     failures: list[str] = []
