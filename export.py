@@ -46,9 +46,14 @@ def _collect_rows(test_name: str):
                 date_time = ''
 
             if header is None:
-                header = ['date_time'] + list(data.keys())
+                data_keys = list(data.keys())
+                if 'engine' in data_keys:
+                    data_keys = ['engine'] + [k for k in data_keys if k != 'engine']
+                    header = data_keys[:1] + ['date_time'] + data_keys[1:]
+                else:
+                    header = ['date_time'] + data_keys
 
-            row = [date_time] + [data.get(k, '') for k in header[1:]]
+            row = [date_time if k == 'date_time' else data.get(k, '') for k in header]
             rows.append(row)
 
     if header is None:

@@ -522,6 +522,7 @@ def main() -> int:
     LOG.info("[info] seed: %s", args.seed)
     LOG.info("[info] debug-break: %s", args.debug_break)
 
+    compose_infos: list[ComposeInfo] = []
     for compose_file in compose_files:
         try:
             info = load_compose_info(compose_file, root=root)
@@ -541,100 +542,93 @@ def main() -> int:
             info.host_port,
             info.tokenizer,
         )
-        pending_concurrency = [
-            conc for conc in concurrency_values
-            if not result_file_path(result_dir, info.service_name, conc).exists()
-        ]
-        if not pending_concurrency:
-            skipped_cases += len(concurrency_values)
-            LOG.info(
-                "[skip] compose=%s all result json already exists in %s",
-                compose_file.name,
-                result_dir,
-            )
-            continue
+        compose_infos.append(info)
 
+    if not stop_requested:
         for conc in concurrency_values:
-            result_json = result_file_path(result_dir, info.service_name, conc)
-            if result_json.exists():
-                skipped_cases += 1
-                LOG.info(
-                    "[skip] compose=%s service=%s concurrency=%s result exists: %s",
-                    compose_file.name,
-                    info.service_name,
-                    conc,
-                    result_json,
-                )
-                continue
-            total_cases += 1
-            case_failed = False
-            LOG.info(
-                "[start] compose=%s service=%s concurrency=%s",
-                compose_file.name,
-                info.service_name,
-                conc,
-            )
-            start_ts = time.time()
-            try:
-                wait_for_port_free(info.host_port, timeout_sec=DEFAULT_PORT_FREE_WAIT_SEC)
-                compose_up(root=root, info=info)
-                wait_for_health(
-                    port=info.host_port,
-                    timeout_sec=args.health_timeout,
-                    interval_sec=args.health_interval,
-                )
-                run_benchmark_for_concurrency(
-                    root=root,
-                    benchmark_script=benchmark_script,
-                    dataset_path=dataset_path,
-                    result_dir=result_dir,
-                    model_name=args.model_name,
-                    info=info,
-                    concurrency=conc,
-                    prompts_factor=args.prompts_factor,
-                    seed=args.seed,
-                    python_bin=args.python_bin,
-                )
-                elapsed = time.time() - start_ts
-                LOG.info(
-                    "[done] compose=%s service=%s concurrency=%s elapsed=%.1fs",
-                    compose_file.name,
-                    info.service_name,
-                    conc,
-                    elapsed,
-                )
-                success_cases += 1
-            except Exception as exc:
-                message = f"{compose_file.name} (concurrency={conc}): {exc}"
-                failures.append(message)
-                LOG.exception("[error] %s", message)
-                case_failed = True
-            finally:
-                LOG.info(
-                    "[teardown] compose=%s service=%s concurrency=%s",
-                    compose_file.name,
-                    info.service_name,
-                    conc,
-                )
-                try:
-                    compose_down(root=root, info=info)
-                except Exception as exc:
-                    message = (
-                        f"{compose_file.name} (concurrency={conc}, teardown): {exc}"
+            LOG.info("[pass] concurrency=%s", conc)
+            for info in compose_infos:
+                compose_file = info.compose_file
+                result_json = result_file_path(result_dir, info.service_name, conc)
+                if result_json.exists():
+                    skipped_cases += 1
+                    LOG.info(
+                        "[skip] compose=%s service=%s concurrency=%s result exists: %s",
+                        compose_file.name,
+                        info.service_name,
+                        conc,
+                        result_json,
                     )
+                    continue
+                total_cases += 1
+                case_failed = False
+                LOG.info(
+                    "[start] compose=%s service=%s concurrency=%s",
+                    compose_file.name,
+                    info.service_name,
+                    conc,
+                )
+                start_ts = time.time()
+                try:
+                    wait_for_port_free(info.host_port, timeout_sec=DEFAULT_PORT_FREE_WAIT_SEC)
+                    compose_up(root=root, info=info)
+                    wait_for_health(
+                        port=info.host_port,
+                        timeout_sec=args.health_timeout,
+                        interval_sec=args.health_interval,
+                    )
+                    run_benchmark_for_concurrency(
+                        root=root,
+                        benchmark_script=benchmark_script,
+                        dataset_path=dataset_path,
+                        result_dir=result_dir,
+                        model_name=args.model_name,
+                        info=info,
+                        concurrency=conc,
+                        prompts_factor=args.prompts_factor,
+                        seed=args.seed,
+                        python_bin=args.python_bin,
+                    )
+                    elapsed = time.time() - start_ts
+                    LOG.info(
+                        "[done] compose=%s service=%s concurrency=%s elapsed=%.1fs",
+                        compose_file.name,
+                        info.service_name,
+                        conc,
+                        elapsed,
+                    )
+                    success_cases += 1
+                except Exception as exc:
+                    message = f"{compose_file.name} (concurrency={conc}): {exc}"
                     failures.append(message)
                     LOG.exception("[error] %s", message)
                     case_failed = True
-            if case_failed and args.debug_break:
-                LOG.warning(
-                    "[debug-break] stopping after failure at compose=%s concurrency=%s",
-                    compose_file.name,
-                    conc,
-                )
-                stop_requested = True
+                finally:
+                    LOG.info(
+                        "[teardown] compose=%s service=%s concurrency=%s",
+                        compose_file.name,
+                        info.service_name,
+                        conc,
+                    )
+                    try:
+                        compose_down(root=root, info=info)
+                    except Exception as exc:
+                        message = (
+                            f"{compose_file.name} (concurrency={conc}, teardown): {exc}"
+                        )
+                        failures.append(message)
+                        LOG.exception("[error] %s", message)
+                        case_failed = True
+                if case_failed and args.debug_break:
+                    LOG.warning(
+                        "[debug-break] stopping after failure at compose=%s concurrency=%s",
+                        compose_file.name,
+                        conc,
+                    )
+                    stop_requested = True
+                    break
+            if stop_requested:
                 break
-        if stop_requested:
-            break
 
     if failures:
         LOG.error("[summary] FAILURES")
