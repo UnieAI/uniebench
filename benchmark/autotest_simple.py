@@ -371,7 +371,61 @@ def result_file_path(result_dir: Path, service_name: str, concurrency: int) -> P
     return result_dir / f"{service_name}.{concurrency}.json"
 
 
-def compose_up(root: Path, info: ComposeInfo) -> None:
+def docker_service_log_path(root: Path, service_name: str) -> Path:
+    safe_service_name = re.sub(r"[^A-Za-z0-9_.-]", "_", service_name)
+    return root / "logs" / f"docker_{safe_service_name}.log"
+
+
+def start_compose_logs_stream(root: Path, info: ComposeInfo) -> subprocess.Popen[str]:
+    compose_dir = info.compose_file.parent
+    compose_name = info.compose_file.name
+    project_name = compose_project_name(info)
+    cmd = [
+        "docker",
+        "compose",
+        "-p",
+        project_name,
+        "-f",
+        compose_name,
+        "logs",
+        "-f",
+        "--timestamps",
+        info.service_name,
+    ]
+    log_path = docker_service_log_path(root=root, service_name=info.service_name)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as log_file:
+        log_file.write(
+            f"\n===== stream start compose={compose_name} "
+            f"service={info.service_name} ts={time.strftime('%Y-%m-%d %H:%M:%S')} =====\n"
+        )
+        log_file.flush()
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(compose_dir),
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+    LOG.info("[docker-logs] streaming %s -> %s", info.service_name, log_path)
+    return proc
+
+
+def stop_compose_logs_stream(proc: subprocess.Popen[str] | None) -> None:
+    if proc is None:
+        return
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
+    else:
+        proc.wait(timeout=1)
+
+
+def compose_up(root: Path, info: ComposeInfo) -> subprocess.Popen[str] | None:
     compose_dir = info.compose_file.parent
     compose_name = info.compose_file.name
     project_name = compose_project_name(info)
@@ -396,6 +450,7 @@ def compose_up(root: Path, info: ComposeInfo) -> None:
         raise subprocess.CalledProcessError(
             result.returncode, cmd, output=result.stdout, stderr=result.stderr
         )
+    return start_compose_logs_stream(root=root, info=info)
 
 
 def compose_down(root: Path, info: ComposeInfo) -> None:
@@ -569,9 +624,10 @@ def main() -> int:
                     conc,
                 )
                 start_ts = time.time()
+                docker_log_proc: subprocess.Popen[str] | None = None
                 try:
                     wait_for_port_free(info.host_port, timeout_sec=DEFAULT_PORT_FREE_WAIT_SEC)
-                    compose_up(root=root, info=info)
+                    docker_log_proc = compose_up(root=root, info=info)
                     wait_for_health(
                         port=info.host_port,
                         timeout_sec=args.health_timeout,
@@ -615,6 +671,15 @@ def main() -> int:
                     except Exception as exc:
                         message = (
                             f"{compose_file.name} (concurrency={conc}, teardown): {exc}"
+                        )
+                        failures.append(message)
+                        LOG.exception("[error] %s", message)
+                        case_failed = True
+                    try:
+                        stop_compose_logs_stream(docker_log_proc)
+                    except Exception as exc:
+                        message = (
+                            f"{compose_file.name} (concurrency={conc}, docker log stream): {exc}"
                         )
                         failures.append(message)
                         LOG.exception("[error] %s", message)
