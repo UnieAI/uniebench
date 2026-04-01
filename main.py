@@ -1,8 +1,9 @@
 from hydra import main
-from omegaconf import DictConfig
+from omegaconf import DictConfig, ListConfig, OmegaConf
 import logging
 from datetime import datetime
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from pyarrow import LoggingMemoryPool
 
@@ -13,9 +14,7 @@ from stop_container import stop_container
 from export import export
 
 
-@main(config_path="config", config_name="config", version_base="1.2")
-def main(cfg: DictConfig) -> None:
-    # if autotest.name is not set, set to random name
+def run_single_server(cfg: DictConfig) -> None:
     if cfg.server.id:
         for server_config in cfg.default_config.server:
             if server_config.id == cfg.server.id:
@@ -93,6 +92,40 @@ def main(cfg: DictConfig) -> None:
     export(cfg.autotest.name, cfg.autotest.sheet_name)
     logging.info('export completed')
     logging.info(f'or you can see the full result under ./results/{cfg.autotest.name}')
+
+
+@main(config_path="config", config_name="config", version_base="1.2")
+def main(cfg: DictConfig) -> None:
+    server_ids = cfg.server.id
+    if isinstance(server_ids, ListConfig):
+        server_ids = list(server_ids)
+
+    if isinstance(server_ids, list):
+        valid_server_ids = [server_id for server_id in server_ids if server_id]
+        if len(valid_server_ids) == 0:
+            logging.warning('cfg.server.id is an empty list; nothing to run')
+            return
+
+        base_autotest_name = cfg.autotest.name if ('autotest' in cfg and 'name' in cfg.autotest) else f'autotest_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
+        with ThreadPoolExecutor(max_workers=len(valid_server_ids)) as executor:
+            futures = {}
+            for server_id in valid_server_ids:
+                thread_cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=False))
+                thread_cfg.server.id = server_id
+                # Avoid result overwrite between threads.
+                thread_cfg.autotest.name = f'{base_autotest_name}_{server_id}'
+                futures[executor.submit(run_single_server, thread_cfg)] = server_id
+
+            for future in as_completed(futures):
+                server_id = futures[future]
+                try:
+                    future.result()
+                except BaseException as e:
+                    logging.error(f'run failed for server id "{server_id}"')
+                    logging.error(e)
+        return
+
+    run_single_server(cfg)
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
