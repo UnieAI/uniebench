@@ -222,7 +222,10 @@ def sample_sharegpt_requests(
             # Prune too long sequences.
             continue
         filtered_dataset.append((prompt, prompt_len, output_len, None))
-        
+
+    while filtered_dataset and len(filtered_dataset) < num_requests:
+        filtered_dataset.append(random.choice(filtered_dataset))
+
     return filtered_dataset
 
 
