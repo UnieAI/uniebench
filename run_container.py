@@ -1,15 +1,27 @@
-from omegaconf import DictConfig
-import subprocess
 import logging
-from hydra import main
+import subprocess
 
-def run_container(cfg: DictConfig, container_path: dict, service_name, detected = True):
-    logging.info(f'start server {container_path}')
-    cmd = ['docker', 'compose', '-f', container_path, 'up']
-    if service_name:
-        cmd.append(service_name)
-    if detected:
-        cmd.append('-d')
+from hydra import main
+from omegaconf import DictConfig
+
+
+def _is_host_shell_script(container_path: str) -> bool:
+    return container_path.endswith(".sh")
+
+
+def run_container(cfg: DictConfig,
+                  container_path: str,
+                  service_name: str = None,
+                  detected: bool = True):
+    logging.info(f"start server {container_path}")
+    if _is_host_shell_script(container_path):
+        cmd = ["bash", container_path]
+    else:
+        cmd = ["docker", "compose", "-f", container_path, "up"]
+        if service_name and service_name != "none":
+            cmd.append(service_name)
+        if detected:
+            cmd.append("-d")
     logging.info(cmd)
     subprocess.Popen(cmd)
 
@@ -24,7 +36,8 @@ def main(cfg: DictConfig) -> None:
                     **server_config.config
                 }
     for container in cfg.server.container:
-        run_container(cfg, container.path)
+        service_name = getattr(container, "service_name", None)
+        run_container(cfg, container.path, service_name)
 
 
 if __name__ == "__main__":

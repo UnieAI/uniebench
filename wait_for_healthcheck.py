@@ -1,9 +1,10 @@
-from omegaconf import DictConfig
-import time
-import requests
-import docker
 import logging
+import time
+
+import requests
 from hydra import main
+from omegaconf import DictConfig
+
 
 def wait_for_healthcheck(cfg: DictConfig, container_name: str) -> None:
     logging.info('waiting for healthcheck')
@@ -20,13 +21,6 @@ def wait_for_healthcheck(cfg: DictConfig, container_name: str) -> None:
                 return
         except requests.RequestException:
             pass
-
-        try:
-            container = docker.from_env().containers.get(container_name)
-        except docker.errors.NotFound:
-            raise RuntimeError(f"{container_name} removed")
-        if container.attrs["State"]["Status"] != "running":
-            raise RuntimeError(f"{container_name} stopped")
 
     raise RuntimeError("Health check timed out")
 

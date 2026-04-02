@@ -57,7 +57,7 @@ def run_single_server(cfg: DictConfig) -> None:
             service_name = None
             if 'service_name' in container:
                 service_name = container.service_name
-                run_container(cfg, container.path, service_name)
+            run_container(cfg, container.path, service_name)
 
         # check health
         try:
