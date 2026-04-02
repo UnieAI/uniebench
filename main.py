@@ -67,7 +67,8 @@ def run_single_server(cfg: DictConfig) -> None:
                 wait_for_healthcheck(cfg, container.name)
         except RuntimeError as e:
             logging.error(f'start server failed: {e}')
-            stop_container(cfg, container.name)
+            if container.path != "none":
+                stop_container(cfg, container.name)
             continue
 
         import random
@@ -86,7 +87,8 @@ def run_single_server(cfg: DictConfig) -> None:
                         logging.error(e)
 
         # stop server
-        stop_container(cfg, container.name)
+        if container.path != "none":
+            stop_container(cfg, container.name)
 
     # export to google-sheet
     export(cfg.autotest.name, cfg.autotest.sheet_name)
