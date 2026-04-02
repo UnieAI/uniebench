@@ -59,6 +59,8 @@ except ImportError:
 from benchmark_utils import convert_to_pytorch_benchmark_format
 
 MILLISECONDS_TO_SECONDS_CONVERSION = 1000
+SHAREGPT_COMPLETION_KEYS = ("answer", "completion", "response", "output",
+                            "text")
 
 
 @dataclass
@@ -91,53 +93,96 @@ class BenchmarkMetrics:
     percentiles_e2el_ms: List[Tuple[float, float]]
 
 
+def _load_sharegpt_local_dataset(dataset_path: str) -> List[Dict[str, Any]]:
+    if dataset_path.endswith(".jsonl"):
+        with open(dataset_path, encoding="utf-8") as f:
+            return [json.loads(line) for line in f if line.strip()]
+
+    if dataset_path.endswith(".json"):
+        with open(dataset_path, encoding="utf-8") as f:
+            return json.load(f)
+
+    if dataset_path.endswith(".parquet"):
+        return pd.read_parquet(dataset_path).to_dict(orient="records")
+
+    raise ValueError(
+        "Unsupported ShareGPT local dataset format. Expected .json, .jsonl, "
+        f"or .parquet, got: {dataset_path}")
+
+
+def _extract_conversation_pairs(
+        conversations: Any) -> List[Tuple[str, str]]:
+    if not isinstance(conversations, list) or len(conversations) < 2:
+        return []
+
+    pairs: List[Tuple[str, str]] = []
+    for i in range(len(conversations) - 1):
+        current_turn = conversations[i]
+        next_turn = conversations[i + 1]
+        if not isinstance(current_turn, dict) or not isinstance(next_turn, dict):
+            continue
+        if current_turn.get("from") != "human":
+            continue
+        prompt = current_turn.get("value")
+        completion = next_turn.get("value")
+        if prompt is None or completion is None:
+            continue
+        pairs.append((prompt, completion))
+    return pairs
+
+
+def _extract_prompt_pair(record: Dict[str, Any]) -> List[Tuple[str, str]]:
+    prompt = record.get("prompt")
+    if prompt is None:
+        return []
+
+    for key in SHAREGPT_COMPLETION_KEYS:
+        completion = record.get(key)
+        if completion is not None:
+            return [(prompt, completion)]
+
+    return [(prompt, "")]
+
+
+def _extract_context_question_answer_pair(
+        record: Dict[str, Any]) -> List[Tuple[str, str]]:
+    context = record.get("context")
+    question = record.get("question")
+    answer = record.get("answer")
+    if context is None or question is None or answer is None:
+        return []
+
+    return [(f"{context}{question}", answer)]
+
+
+def _extract_sharegpt_prompt_completion_pairs(
+        dataset: List[Dict[str, Any]]) -> List[Tuple[str, str]]:
+    prompt_completion_pairs: List[Tuple[str, str]] = []
+    for record in dataset:
+        if not isinstance(record, dict):
+            continue
+        if "conversations" in record:
+            prompt_completion_pairs.extend(
+                _extract_conversation_pairs(record["conversations"]))
+            continue
+        if "prompt" in record:
+            prompt_completion_pairs.extend(_extract_prompt_pair(record))
+            continue
+        if "context" in record or "question" in record or "answer" in record:
+            prompt_completion_pairs.extend(
+                _extract_context_question_answer_pair(record))
+
+    return prompt_completion_pairs
+
+
 def sample_sharegpt_requests(
     dataset_path: str,
     num_requests: int,
     tokenizer: PreTrainedTokenizerBase,
     fixed_output_len: Optional[int] = None,
 ) -> List[Tuple[str, int, int, None]]:
-    # Load the dataset.
-    if dataset_path.endswith('.jsonl'):
-        with open(dataset_path, encoding='utf-8') as f:
-            # 針對 jsonl：逐行讀取並解析
-            dataset = [json.loads(line) for line in f if line.strip()]
-    else:
-        with open(dataset_path, encoding='utf-8') as f:
-            # 針對 json：一次性讀取整個檔案
-            dataset = json.load(f)
-    # Filter out the conversations with less than 2 turns.
-
-    if 'conversations' in dataset[0]:
-        dataset = [data for data in dataset if len(data["conversations"]) >= 2]
-        # Only keep conversations where the first message is from a human.
-        dataset = [
-            (data["conversations"][i]["value"], data["conversations"][i+1]["value"])
-            for data in dataset
-            for i in range(len(data["conversations"]) - 1)
-            if data["conversations"][i]["from"] == "human"
-        ]
-    elif 'prompt' in dataset[0]:
-        completion_key = None
-        for key in ("answer", "completion", "response", "output", "text"):
-            if key in dataset[0]:
-                completion_key = key
-                break
-        if completion_key is None:
-            dataset = [
-                (data["prompt"], "")
-                for data in dataset
-                if data.get("prompt") is not None
-            ]
-        else:
-            dataset = [
-                (data["prompt"], data[completion_key])
-                for data in dataset
-                if data.get("prompt") is not None and data.get(completion_key) is not None
-            ]
-    else:
-        dataset = []
-        pass
+    dataset = _load_sharegpt_local_dataset(dataset_path)
+    dataset = _extract_sharegpt_prompt_completion_pairs(dataset)
 
     # 如果 num_requests 是 100 或 1000，將 dataset = data[前一半]
     # 否則，dataset = dataset[後一半]
@@ -161,7 +206,8 @@ def sample_sharegpt_requests(
 
         # Tokenize the prompts and completions.
         prompt = dataset[i][0]
-        prompt += f"\nAnswer the question with about {fixed_output_len} words"
+        if fixed_output_len is not None:
+            prompt += f"\nAnswer the question with about {fixed_output_len} words"
         prompt_token_ids = tokenizer(prompt).input_ids
         completion = dataset[i][1]
         completion_token_ids = tokenizer(completion).input_ids
@@ -172,8 +218,7 @@ def sample_sharegpt_requests(
             # Prune too short sequences.
             continue
         CONTEXT_LENGTH = 2048 # 2048
-        # prompt_len > CONTEXT_LENGTH // 2 or 
-        if prompt_len + fixed_output_len > CONTEXT_LENGTH:
+        if prompt_len + output_len > CONTEXT_LENGTH:
             # Prune too long sequences.
             continue
         filtered_dataset.append((prompt, prompt_len, output_len, None))
