@@ -209,18 +209,12 @@ def sample_sharegpt_requests(
         if fixed_output_len is not None:
             prompt += f"\nAnswer the question with about {fixed_output_len} words"
         prompt_token_ids = tokenizer(prompt).input_ids
-        completion = dataset[i][1]
-        completion_token_ids = tokenizer(completion).input_ids
         prompt_len = len(prompt_token_ids)
-        output_len = len(completion_token_ids
-                         ) if fixed_output_len is None else fixed_output_len
+        output_len = fixed_output_len
         if prompt_len < 4 or (fixed_output_len is None and output_len < 4):
             # Prune too short sequences.
             continue
-        CONTEXT_LENGTH = 2048 # 2048
-        if prompt_len + output_len > CONTEXT_LENGTH:
-            # Prune too long sequences.
-            continue
+
         filtered_dataset.append((prompt, prompt_len, output_len, None))
 
     while filtered_dataset and len(filtered_dataset) < num_requests:
