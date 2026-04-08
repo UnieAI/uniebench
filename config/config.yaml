@@ -19,30 +19,30 @@ default_config:
         - id: test1
           config:
             container:
-                - path: none            # docker-compose.yml 路徑，或輸入 none 代表 server 已經在外部啟動
-                  service_name: none    # 如果 docker-compose.yml 有多個 service，需要填入 service_name
-                  name: vllm-iter1      # service 名稱，通常是推理引擎的名字+你做了什麼改動
-                  tp_size: 1            # 用幾顆 gpu 跑
-                  port: 12470           # 輸出的 port
-            port: 0                     # 不用改
-            base_url: http://localhost
-            model_path: /mnt/models     # 模型路徑
-            model_name: Qwen/Qwen3-8B   # 模型名稱， 路徑/名稱 會是 model 的具體位置
-            model_id: /mnt/models/Qwen/Qwen3-8B/    # model_id，呼叫 api 時使用
+                - path: none            # docker-compose.yml path or shell script path.
+                  service_name: none    # if multiple services in one .yml file, choose one of them
+                  name: vllm-iter1      # test name;  for example, "vllm-with-kernel-optimized-version-2" 
+                  tp_size: 1            # tp size.
+                  port: 12470           # which port can I call the api.
+                  model_path: /mnt/models     # 模型路徑
+                  model_name: Qwen/Qwen3-8B   # 模型名稱， 路徑/名稱 會是 model 的具體位置
+                  model_id: /mnt/models/Qwen/Qwen3-8B/    # model_id，呼叫 api 時使用
     benchmark:
         - id: test1
           config:
             name:
                 - inferencemax-h100             # 目前只能用 inferencemax-h100
-            endpoint_type: chat                 # 可選 chat 或 completions，注意模型是否支援
+            endpoint_type: chat                 # 可選 chat 或 completions ，注意模型是否支援
             model_name: ${server.model_name}    # 不用改
             dataset_path: ./benchmark/datasets/MaziyarPanahi/Synthia-Coder-v1.5-I-sharegpt.json # dataset 路徑，移除此欄位的話會使用 random
             token_lengths:
-                - input_len: 128                # 輸入跟輸出的長度，可以一次測試多個
+                - input_len: none                # 輸入跟輸出的長度，可以一次測試多個
                   output_len: 1024
-                - input_len: 768
-                  output_len: 768
             concurrency:
                 - 1                            # 一次有幾個使用者同時跑，可以一次測試多個
-                - 8
+                - 16
+                - 32
+                - 64
+                - 128
+                - 256
                 - 512

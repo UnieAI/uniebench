@@ -37,45 +37,49 @@ def run_single_server(cfg: DictConfig) -> None:
 
     # start server (outer loop)
     for container in cfg.server.container:
-        if 'port' in container:
-            cfg.server.port = container.port
-        if 'model_name' in container:
-            cfg.server.model_name = container.model_name
-        if 'model_id' in container:
-            cfg.server.model_id = container.model_id
-        if 'endpoint_type' in container:
-            cfg.benchmark.endpoint_type = container.endpoint_type
-
-        if container.name == "none":
-            if cfg.server.name:
-                container.name = cfg.server.name
-            else:
-                container.name = f'server_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
-        if container.path == "none":
-            logging.info('assume server is running')
-        else:
-            service_name = None
-            if 'service_name' in container:
-                service_name = container.service_name
-            run_container(cfg, container.path, service_name)
-
-        # check health
-        try:
-            if container.path == "none":
-                logging.info('assume server is running')
-            else:
-                wait_for_healthcheck(cfg, container.name)
-        except RuntimeError as e:
-            logging.error(f'start server failed: {e}')
-            if container.path != "none":
-                stop_container(cfg, container.name)
-            continue
-
-        import random
         # run benchmark (inner loop)
         for benchmark_name in cfg.benchmark.name:
             for token_lengths in cfg.benchmark.token_lengths:
                 for c_index in range(len(cfg.benchmark.concurrency)):
+                    if 'port' in container:
+                        cfg.server.port = container.port
+                    if 'base_url' in container:
+                        cfg.server.base_url = container.base_url
+                    if 'model_name' in container:
+                        cfg.server.model_name = container.model_name
+                    if 'model_path' in container:
+                        cfg.server.model_path = container.model_path
+                    if 'model_id' in container:
+                        cfg.server.model_id = container.model_id
+                    if 'endpoint_type' in container:
+                        cfg.benchmark.endpoint_type = container.endpoint_type
+
+                    if container.name == "none":
+                        if cfg.server.name:
+                            container.name = cfg.server.name
+                        else:
+                            container.name = f'server_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
+                    if container.path == "none":
+                        logging.info('assume server is running')
+                    else:
+                        service_name = None
+                        if 'service_name' in container:
+                            service_name = container.service_name
+                        run_container(cfg, container.path, service_name)
+
+                    # check health
+                    try:
+                        if container.path == "none":
+                            logging.info('assume server is running')
+                        else:
+                            wait_for_healthcheck(cfg, container.name)
+                    except RuntimeError as e:
+                        logging.error(f'start server failed: {e}')
+                        if container.path != "none":
+                            stop_container(cfg, container.name)
+                        continue
+
+                    import random
                     concurrency = cfg.benchmark.concurrency[c_index]
                     seed = random.randint(0, 2147483647)
                     if 'seeds' in cfg.benchmark and len(cfg.benchmark.seeds) > 0:
@@ -86,9 +90,9 @@ def run_single_server(cfg: DictConfig) -> None:
                         logging.error(f'benchmark failed.  name: {benchmark_name}, token_lengths: {token_lengths.input_len}/{token_lengths.output_len}, concurrency: {concurrency}')
                         logging.error(e)
 
-        # stop server
-        if container.path != "none":
-            stop_container(cfg, container.name)
+                    # stop server
+                    if container.path != "none":
+                        stop_container(cfg, container.name)
 
     # export to google-sheet
     export(cfg.autotest.name, cfg.autotest.sheet_name)
