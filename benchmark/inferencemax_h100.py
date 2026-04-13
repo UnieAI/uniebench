@@ -10,6 +10,7 @@ import requests
 from datetime import datetime as dt
 
 from log_utils import TRACE_LEVEL
+from benchmark.runtime_metadata import collect_runtime_metadata
 
 def inferencemax_h100(cfg: DictConfig, container, token_lengths, concurrency, seed):
     logging.info('run benchmark inferencemax-h100...')
@@ -122,6 +123,7 @@ def benchmark_post_processing(cfg: DictConfig, container, concurrency, seed = No
         "inter_token_latency.std": data['std_itl_ms'],
         "inter_token_latency.p99": data['p99_itl_ms'],
     }
+    result.update(collect_runtime_metadata(cfg))
     
     dist = os.path.join(dist_folder, 'result.json')
     with open(dist, 'w') as fw:

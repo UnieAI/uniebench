@@ -8,6 +8,7 @@ from datetime import datetime as dt
 import shutil
 
 from log_utils import TRACE_LEVEL
+from benchmark.runtime_metadata import collect_runtime_metadata
 
 
 def genai_perf(cfg: DictConfig, container, token_lengths, concurrency):
@@ -98,6 +99,7 @@ def benchmark_post_processing(cfg: DictConfig, container, concurrency):
         "inter_token_latency.p99": data['inter_token_latency']['p99'],
 
     }
+    result.update(collect_runtime_metadata(cfg))
     
     dist = os.path.join(dist_folder, 'result.json')
     with open(dist, 'w') as fw:
