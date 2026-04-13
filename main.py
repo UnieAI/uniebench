@@ -65,7 +65,7 @@ def run_single_server(cfg: DictConfig) -> None:
                         service_name = None
                         if 'service_name' in container:
                             service_name = container.service_name
-                        run_container(cfg, container.path, service_name)
+                        started_pid = run_container(cfg, container.path, service_name, container_name=container.name)
 
                     # check health
                     try:
@@ -76,7 +76,7 @@ def run_single_server(cfg: DictConfig) -> None:
                     except RuntimeError as e:
                         logging.error(f'start server failed: {e}')
                         if container.path != "none":
-                            stop_container(cfg, container.name)
+                            stop_container(cfg, container.name, container.path, started_pid)
                         continue
 
                     import random
@@ -92,7 +92,7 @@ def run_single_server(cfg: DictConfig) -> None:
 
                     # stop server
                     if container.path != "none":
-                        stop_container(cfg, container.name)
+                        stop_container(cfg, container.name, container.path, started_pid)
 
     # export to google-sheet
     export(cfg.autotest.name, cfg.autotest.sheet_name)

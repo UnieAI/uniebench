@@ -1,5 +1,7 @@
 import logging
+import os
 import subprocess
+from typing import Optional
 
 from hydra import main
 from omegaconf import DictConfig
@@ -9,10 +11,17 @@ def _is_host_shell_script(container_path: str) -> bool:
     return container_path.endswith(".sh")
 
 
+def _pid_file_path(container_name: str) -> str:
+    safe_name = "".join(ch if ch.isalnum() or ch in ("-", "_", ".") else "_" for ch in container_name)
+    os.makedirs(".runtime_pids", exist_ok=True)
+    return os.path.join(".runtime_pids", f"{safe_name}.pid")
+
+
 def run_container(cfg: DictConfig,
                   container_path: str,
                   service_name: str = None,
-                  detected: bool = True):
+                  detected: bool = True,
+                  container_name: Optional[str] = None) -> Optional[int]:
     logging.info(f"start server {container_path}")
     if _is_host_shell_script(container_path):
         cmd = ["bash", container_path]
@@ -23,7 +32,16 @@ def run_container(cfg: DictConfig,
         if detected:
             cmd.append("-d")
     logging.info(cmd)
-    subprocess.Popen(cmd)
+    process = subprocess.Popen(cmd)
+
+    if _is_host_shell_script(container_path) and container_name:
+        pid_path = _pid_file_path(container_name)
+        with open(pid_path, "w", encoding="utf-8") as pid_file:
+            pid_file.write(str(process.pid))
+        logging.info(f"recorded shell script pid {process.pid} in {pid_path}")
+        return process.pid
+
+    return None
 
 @main(config_path="config", config_name="config", version_base="1.2")
 def main(cfg: DictConfig) -> None:
@@ -37,7 +55,7 @@ def main(cfg: DictConfig) -> None:
                 }
     for container in cfg.server.container:
         service_name = getattr(container, "service_name", None)
-        run_container(cfg, container.path, service_name)
+        run_container(cfg, container.path, service_name, container_name=container.name)
 
 
 if __name__ == "__main__":
