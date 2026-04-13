@@ -6,6 +6,8 @@ from typing import Optional
 from hydra import main
 from omegaconf import DictConfig
 
+from log_utils import consume_verbosity_flags, configure_logging, TRACE_LEVEL
+
 
 def _is_host_shell_script(container_path: str) -> bool:
     return container_path.endswith(".sh")
@@ -22,7 +24,7 @@ def run_container(cfg: DictConfig,
                   service_name: str = None,
                   detected: bool = True,
                   container_name: Optional[str] = None) -> Optional[int]:
-    logging.info(f"start server {container_path}")
+    logging.info("start server from %s", container_path)
     if _is_host_shell_script(container_path):
         cmd = ["bash", container_path]
     else:
@@ -31,14 +33,33 @@ def run_container(cfg: DictConfig,
             cmd.append(service_name)
         if detected:
             cmd.append("-d")
-    logging.info(cmd)
-    process = subprocess.Popen(cmd)
+    logging.debug("startup command: %s", cmd)
+    logging.log(TRACE_LEVEL, "startup options: service_name=%s detected=%s", service_name, detected)
+    popen_kwargs = {}
+    if _is_host_shell_script(container_path):
+        # Show inference engine stdout/stderr only on -vv / -vvv.
+        if logging.getLogger().getEffectiveLevel() > TRACE_LEVEL:
+            popen_kwargs["stdout"] = subprocess.DEVNULL
+            popen_kwargs["stderr"] = subprocess.DEVNULL
+            logging.debug("suppressing shell service logs (enable -vv or -vvv to show)")
+        else:
+            logging.debug("shell service logs are enabled")
+
+    try:
+        process = subprocess.Popen(
+            cmd,
+            start_new_session=_is_host_shell_script(container_path),
+            **popen_kwargs,
+        )
+    except OSError as exc:
+        logging.error("server startup failed: %s", exc)
+        raise RuntimeError(f"failed to start server command: {cmd}") from exc
 
     if _is_host_shell_script(container_path) and container_name:
         pid_path = _pid_file_path(container_name)
         with open(pid_path, "w", encoding="utf-8") as pid_file:
             pid_file.write(str(process.pid))
-        logging.info(f"recorded shell script pid {process.pid} in {pid_path}")
+        logging.debug("recorded shell script pid %s in %s", process.pid, pid_path)
         return process.pid
 
     return None
@@ -59,5 +80,5 @@ def main(cfg: DictConfig) -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    configure_logging(consume_verbosity_flags())
     main()

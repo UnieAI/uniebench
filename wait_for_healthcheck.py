@@ -5,15 +5,17 @@ import requests
 from hydra import main
 from omegaconf import DictConfig
 
+from log_utils import consume_verbosity_flags, configure_logging, TRACE_LEVEL
+
 
 def wait_for_healthcheck(cfg: DictConfig, container_name: str) -> None:
-    logging.info('waiting for healthcheck')
+    logging.info('waiting for healthcheck: %s', container_name)
     url = cfg.healthcheck.url
     timeout = cfg.healthcheck.timeout
     interval = cfg.healthcheck.interval
     max_tries = cfg.healthcheck.max_tries
     for attempt in range(max_tries):
-        logging.info(f'waiting {url}... {attempt}/{max_tries}')
+        logging.log(TRACE_LEVEL, 'healthcheck polling %s... %s/%s', url, attempt + 1, max_tries)
         time.sleep(interval)
         try:
             if requests.get(url, timeout=timeout).status_code == 200:
@@ -36,5 +38,5 @@ def main(cfg: DictConfig) -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    configure_logging(consume_verbosity_flags())
     main()

@@ -9,6 +9,8 @@ import random
 import requests
 from datetime import datetime as dt
 
+from log_utils import TRACE_LEVEL
+
 def inferencemax_h100(cfg: DictConfig, container, token_lengths, concurrency, seed):
     logging.info('run benchmark inferencemax-h100...')
     benchmark(cfg, token_lengths, concurrency, seed)
@@ -60,13 +62,19 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency, seed):
         ])
 
 
-    logging.info(cmd)
-    subprocess.run(
-        cmd,
-        capture_output=False,
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-    )
+    logging.debug("run inferencemax-h100 command")
+    logging.log(TRACE_LEVEL, "command: %s", cmd)
+    try:
+        subprocess.run(
+            cmd,
+            capture_output=False,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        logging.error("benchmark command failed (inferencemax-h100), returncode=%s", exc.returncode)
+        raise
 
 def benchmark_post_processing(cfg: DictConfig, container, concurrency, seed = None):
     RESULT_ROOT = f'./results/{cfg.autotest.name}/inferencemax_h100'

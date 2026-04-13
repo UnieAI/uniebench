@@ -3,10 +3,12 @@ from omegaconf import DictConfig, ListConfig, OmegaConf
 import logging
 from datetime import datetime
 import os
+import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from pyarrow import LoggingMemoryPool
 
+from log_utils import consume_verbosity_flags, configure_logging, TRACE_LEVEL, TRACE2_LEVEL
 from run_container import run_container
 from wait_for_healthcheck import wait_for_healthcheck
 from run_benchmark import run_benchmark
@@ -34,6 +36,13 @@ def run_single_server(cfg: DictConfig) -> None:
         cfg.autotest.name = f'autotest_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
 
     os.makedirs(f'./results/{cfg.autotest.name}', exist_ok=True)
+    total_rounds = (
+        len(cfg.server.container)
+        * len(cfg.benchmark.name)
+        * len(cfg.benchmark.token_lengths)
+        * len(cfg.benchmark.concurrency)
+    )
+    round_index = 0
 
     # start server (outer loop)
     for container in cfg.server.container:
@@ -41,6 +50,7 @@ def run_single_server(cfg: DictConfig) -> None:
         for benchmark_name in cfg.benchmark.name:
             for token_lengths in cfg.benchmark.token_lengths:
                 for c_index in range(len(cfg.benchmark.concurrency)):
+                    round_index += 1
                     if 'port' in container:
                         cfg.server.port = container.port
                     if 'base_url' in container:
@@ -59,40 +69,84 @@ def run_single_server(cfg: DictConfig) -> None:
                             container.name = cfg.server.name
                         else:
                             container.name = f'server_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
+                    concurrency = cfg.benchmark.concurrency[c_index]
+                    logging.info(
+                        "round %s/%s | benchmark=%s | container=%s | input_len=%s | output_len=%s | concurrency=%s",
+                        round_index,
+                        total_rounds,
+                        benchmark_name,
+                        container.name,
+                        token_lengths.input_len,
+                        token_lengths.output_len,
+                        concurrency,
+                    )
+                    logging.log(TRACE_LEVEL, "round container config: %s", container)
+                    logging.log(
+                        TRACE2_LEVEL,
+                        "current server cfg: base_url=%s port=%s model=%s",
+                        cfg.server.base_url,
+                        cfg.server.port,
+                        cfg.server.model_id,
+                    )
+
                     if container.path == "none":
-                        logging.info('assume server is running')
+                        logging.info("start service: skipped (assume existing service is already running)")
                     else:
+                        logging.info("start service: %s", container.name)
                         service_name = None
                         if 'service_name' in container:
                             service_name = container.service_name
-                        started_pid = run_container(cfg, container.path, service_name, container_name=container.name)
+                        try:
+                            started_pid = run_container(cfg, container.path, service_name, container_name=container.name)
+                        except BaseException as e:
+                            logging.error("server startup failed. container=%s path=%s", container.name, container.path)
+                            logging.error(e)
+                            continue
 
                     # check health
                     try:
                         if container.path == "none":
-                            logging.info('assume server is running')
+                            logging.debug('healthcheck skipped because service startup was skipped')
                         else:
                             wait_for_healthcheck(cfg, container.name)
                     except RuntimeError as e:
-                        logging.error(f'start server failed: {e}')
+                        logging.error("server startup failed during healthcheck. container=%s url=%s", container.name, cfg.healthcheck.url)
+                        logging.error(e)
                         if container.path != "none":
-                            stop_container(cfg, container.name, container.path, started_pid)
+                            logging.info("stop service due to startup failure: %s", container.name)
+                            try:
+                                stop_container(cfg, container.name, container.path, started_pid)
+                            except BaseException as stop_exc:
+                                logging.error("server shutdown failed while handling startup failure. container=%s", container.name)
+                                logging.error(stop_exc)
+                                raise
                         continue
 
-                    import random
-                    concurrency = cfg.benchmark.concurrency[c_index]
                     seed = random.randint(0, 2147483647)
                     if 'seeds' in cfg.benchmark and len(cfg.benchmark.seeds) > 0:
                         seed = cfg.benchmark.seeds[c_index % len(cfg.benchmark.seeds)]
                     try:
+                        logging.info("benchmark running: %s", benchmark_name)
                         run_benchmark(cfg, benchmark_name, container, token_lengths, concurrency, seed)
+                        logging.info("benchmark completed: %s", benchmark_name)
                     except BaseException as e:
                         logging.error(f'benchmark failed.  name: {benchmark_name}, token_lengths: {token_lengths.input_len}/{token_lengths.output_len}, concurrency: {concurrency}')
                         logging.error(e)
 
                     # stop server
                     if container.path != "none":
-                        stop_container(cfg, container.name, container.path, started_pid)
+                        logging.info("stop service: %s", container.name)
+                        try:
+                            stop_container(cfg, container.name, container.path, started_pid)
+                        except BaseException as e:
+                            logging.error("server shutdown failed. container=%s", container.name)
+                            logging.error(e)
+                            raise
+
+                    if round_index < total_rounds:
+                        logging.info("enter next round: %s/%s", round_index + 1, total_rounds)
+                    else:
+                        logging.info("all rounds completed for %s", cfg.autotest.name)
 
     # export to google-sheet
     export(cfg.autotest.name, cfg.autotest.sheet_name)
@@ -134,5 +188,5 @@ def main(cfg: DictConfig) -> None:
     run_single_server(cfg)
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    configure_logging(consume_verbosity_flags())
     main()

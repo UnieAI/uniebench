@@ -8,6 +8,8 @@ import gspread
 import logging
 from google.oauth2.service_account import Credentials
 
+from log_utils import consume_verbosity_flags, configure_logging
+
 operation_count = 0
 def operation_check():
     global operation_count
@@ -123,7 +125,7 @@ def export(test_name: str, sheet_name: str, worksheet_name = None):
         operation_check()
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
+    configure_logging(consume_verbosity_flags())
 
     # 讀取 sheet_id_list.json，讓使用者選擇輸出目的地
     with open('sheet_id_list.json', 'r', encoding='utf8') as f:

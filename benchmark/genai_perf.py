@@ -7,6 +7,8 @@ import json
 from datetime import datetime as dt
 import shutil
 
+from log_utils import TRACE_LEVEL
+
 
 def genai_perf(cfg: DictConfig, container, token_lengths, concurrency):
     logging.info('run benchmark genai-perf...')
@@ -35,13 +37,19 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency):
         '--artifact-dir', RESULT_ROOT
     ]
 
-    logging.info(cmd)
-    subprocess.run(
-        cmd,
-        capture_output=False,
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-    )
+    logging.debug("run genai-perf command")
+    logging.log(TRACE_LEVEL, "command: %s", cmd)
+    try:
+        subprocess.run(
+            cmd,
+            capture_output=False,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        logging.error("benchmark command failed (genai-perf), returncode=%s", exc.returncode)
+        raise
 
 
 def benchmark_post_processing(cfg: DictConfig, container, concurrency):
