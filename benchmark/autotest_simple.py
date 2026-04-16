@@ -7,6 +7,8 @@
 #   --result-dir ./results \
 #   --concurrency 1,2 \
 #   --with-container \
+#   --port 8080 \
+#   --tokenizer /workspace/model \
 #   --debug-break # stop test for debugging errors
 from __future__ import annotations
 
@@ -498,6 +500,28 @@ def configure_argparse() -> argparse.ArgumentParser:
     parser.add_argument("--model-name", default="test")
     parser.add_argument("--python-bin", default="python3")
     parser.add_argument(
+        "--service-name",
+        default="with-container",
+        help="Service name used for result filename in --with-container direct mode.",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help=(
+            "Host port of an already-running endpoint. If set with --with-container, "
+            "service-dir/compose files are not required."
+        ),
+    )
+    parser.add_argument(
+        "--tokenizer",
+        default=None,
+        help=(
+            "Tokenizer/model path for benchmark_serving.py in --with-container "
+            "direct mode. Defaults to --model-name when omitted."
+        ),
+    )
+    parser.add_argument(
         "--health-timeout",
         type=int,
         default=DEFAULT_HEALTH_TIMEOUT_SEC,
@@ -556,8 +580,6 @@ def main() -> int:
     result_dir = args.result_dir
     concurrency_values = parse_concurrency(args.concurrency)
 
-    if not service_dir.exists():
-        raise RuntimeError(f"service-dir not found: {service_dir}")
     if not benchmark_script.exists():
         raise RuntimeError(f"benchmark-script not found: {benchmark_script}")
     if not dataset_path:
@@ -574,40 +596,67 @@ def main() -> int:
     success_cases = 0
     skipped_cases = 0
     stop_requested = False
-    compose_files = list(iterate_compose_files(service_dir))
-
     LOG.info("[info] root: %s", root)
     LOG.info("[info] service-dir: %s", service_dir)
     LOG.info("[info] benchmark-script: %s", benchmark_script)
     LOG.info("[info] dataset-path: %s", dataset_path)
     LOG.info("[info] result-dir: %s", result_dir)
-    LOG.info("[info] compose files: %s", len(compose_files))
     LOG.info("[info] concurrency: %s", concurrency_values)
     LOG.info("[info] seed: %s", args.seed)
     LOG.info("[info] with-container: %s", args.with_container)
+    LOG.info("[info] port: %s", args.port)
+    LOG.info("[info] tokenizer: %s", args.tokenizer or args.model_name)
     LOG.info("[info] debug-break: %s", args.debug_break)
 
     compose_infos: list[ComposeInfo] = []
-    for compose_file in compose_files:
-        try:
-            info = load_compose_info(compose_file, root=root)
-        except Exception as exc:
-            message = f"{compose_file.name} (parse compose): {exc}"
-            failures.append(message)
-            LOG.exception("[error] %s", message)
-            if args.debug_break:
-                LOG.warning("[debug-break] stopping after parse failure")
-                stop_requested = True
-                break
-            continue
-        LOG.info(
-            "[info] service=%s compose=%s port=%s tokenizer=%s",
-            info.service_name,
-            compose_file.name,
-            info.host_port,
-            info.tokenizer,
+    if args.with_container:
+        if args.port is None:
+            raise RuntimeError("--port is required when --with-container is set")
+        compose_infos.append(
+            ComposeInfo(
+                compose_file=Path("with-container"),
+                service_name=args.service_name,
+                host_port=args.port,
+                tokenizer=args.tokenizer or args.model_name,
+            )
         )
-        compose_infos.append(info)
+        LOG.info(
+            "[info] direct with-container mode: service=%s port=%s tokenizer=%s",
+            args.service_name,
+            args.port,
+            args.tokenizer or args.model_name,
+        )
+    else:
+        if not service_dir.exists():
+            raise RuntimeError(f"service-dir not found: {service_dir}")
+        compose_files = list(iterate_compose_files(service_dir))
+        LOG.info("[info] compose files: %s", len(compose_files))
+        for compose_file in compose_files:
+            try:
+                info = load_compose_info(compose_file, root=root)
+            except Exception as exc:
+                message = f"{compose_file.name} (parse compose): {exc}"
+                failures.append(message)
+                LOG.exception("[error] %s", message)
+                if args.debug_break:
+                    LOG.warning("[debug-break] stopping after parse failure")
+                    stop_requested = True
+                    break
+                continue
+            LOG.info(
+                "[info] service=%s compose=%s port=%s tokenizer=%s",
+                info.service_name,
+                compose_file.name,
+                info.host_port,
+                info.tokenizer,
+            )
+            compose_infos.append(info)
+
+    if not compose_infos:
+        raise RuntimeError(
+            "No service targets found. Set --port with --with-container, "
+            "or provide compose files via --service-dir."
+        )
 
     if not stop_requested:
         for conc in concurrency_values:
