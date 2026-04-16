@@ -6,6 +6,7 @@
 #   --dataset-path ./data/ShareGPT_V3_unfiltered_cleaned_split.json \
 #   --result-dir ./results \
 #   --concurrency 1,2 \
+#   --with-container \
 #   --debug-break # stop test for debugging errors
 from __future__ import annotations
 
@@ -516,6 +517,14 @@ def configure_argparse() -> argparse.ArgumentParser:
     )
     parser.add_argument("--seed", type=int, default=0, help="Random seed. Default: 0.")
     parser.add_argument(
+        "--with-container",
+        action="store_true",
+        help=(
+            "Assume containers are already running. Skip docker compose "
+            "up/down and docker compose log streaming."
+        ),
+    )
+    parser.add_argument(
         "--debug-break",
         action="store_true",
         help="Stop immediately on first failure for debugging.",
@@ -575,6 +584,7 @@ def main() -> int:
     LOG.info("[info] compose files: %s", len(compose_files))
     LOG.info("[info] concurrency: %s", concurrency_values)
     LOG.info("[info] seed: %s", args.seed)
+    LOG.info("[info] with-container: %s", args.with_container)
     LOG.info("[info] debug-break: %s", args.debug_break)
 
     compose_infos: list[ComposeInfo] = []
@@ -626,8 +636,19 @@ def main() -> int:
                 start_ts = time.time()
                 docker_log_proc: subprocess.Popen[str] | None = None
                 try:
-                    wait_for_port_free(info.host_port, timeout_sec=DEFAULT_PORT_FREE_WAIT_SEC)
-                    docker_log_proc = compose_up(root=root, info=info)
+                    if args.with_container:
+                        LOG.info(
+                            "[container] skip compose up (use existing container): "
+                            "compose=%s service=%s",
+                            compose_file.name,
+                            info.service_name,
+                        )
+                    else:
+                        wait_for_port_free(
+                            info.host_port,
+                            timeout_sec=DEFAULT_PORT_FREE_WAIT_SEC,
+                        )
+                        docker_log_proc = compose_up(root=root, info=info)
                     wait_for_health(
                         port=info.host_port,
                         timeout_sec=args.health_timeout,
@@ -666,24 +687,33 @@ def main() -> int:
                         info.service_name,
                         conc,
                     )
-                    try:
-                        compose_down(root=root, info=info)
-                    except Exception as exc:
-                        message = (
-                            f"{compose_file.name} (concurrency={conc}, teardown): {exc}"
+                    if args.with_container:
+                        LOG.info(
+                            "[container] skip compose down (keep existing container): "
+                            "compose=%s service=%s",
+                            compose_file.name,
+                            info.service_name,
                         )
-                        failures.append(message)
-                        LOG.exception("[error] %s", message)
-                        case_failed = True
-                    try:
-                        stop_compose_logs_stream(docker_log_proc)
-                    except Exception as exc:
-                        message = (
-                            f"{compose_file.name} (concurrency={conc}, docker log stream): {exc}"
-                        )
-                        failures.append(message)
-                        LOG.exception("[error] %s", message)
-                        case_failed = True
+                    else:
+                        try:
+                            compose_down(root=root, info=info)
+                        except Exception as exc:
+                            message = (
+                                f"{compose_file.name} (concurrency={conc}, teardown): {exc}"
+                            )
+                            failures.append(message)
+                            LOG.exception("[error] %s", message)
+                            case_failed = True
+                        try:
+                            stop_compose_logs_stream(docker_log_proc)
+                        except Exception as exc:
+                            message = (
+                                f"{compose_file.name} "
+                                f"(concurrency={conc}, docker log stream): {exc}"
+                            )
+                            failures.append(message)
+                            LOG.exception("[error] %s", message)
+                            case_failed = True
                 if case_failed and args.debug_break:
                     LOG.warning(
                         "[debug-break] stopping after failure at compose=%s concurrency=%s",

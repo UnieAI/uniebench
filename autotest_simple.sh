@@ -1,8 +1,8 @@
 #!/bin/sh
 python3 benchmark/autotest_simple.py \
   --service-dir /workspace/nctu6/ascend/service_test \
-  --dataset-path ./data/ShareGPT_V3_unfiltered_cleaned_split.json \
+  --dataset-path neural-bridge/rag-dataset-12000 \
   --result-dir ./results \
-  --concurrency 1,2 \
-  --debug-break
-
+  --concurrency 1,16,32,64,128,256,512
+#  --with-container
+#  --debug-break
