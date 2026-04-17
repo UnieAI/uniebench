@@ -26,14 +26,21 @@ def _collect_rows(test_name: str):
     else:
         files = glob.glob(f'./results/{test_name}/*/*/result.json')
 
-    # 2. 整理資料
-    header = None
-    rows = []
+    # 2. 先掃描所有資料，收集完整欄位
+    records = []
+    key_order = []
+    key_set = set()
     for file_path in files:
         with open(file_path, 'r', encoding='utf8') as f:
             alldata = json.load(f)
             if not isinstance(alldata, list):
                 alldata = [alldata]
+
+        parts = file_path.split(os.sep)
+        if len(parts) >= 5:
+            date_time = parts[4]
+        else:
+            date_time = ''
 
         for data in alldata:
             if 'remark' not in data:
@@ -41,20 +48,19 @@ def _collect_rows(test_name: str):
             if 'seed' not in data:
                 data['seed'] = 'random'
 
-            parts = file_path.split(os.sep)
-            if len(parts) >= 5:
-                date_time = parts[4]
-            else:
-                date_time = ''
+            records.append((date_time, data))
+            for k in data.keys():
+                if k not in key_set:
+                    key_set.add(k)
+                    key_order.append(k)
 
-            if header is None:
-                header = ['date_time'] + list(data.keys())
+    header = ['date_time'] + key_order if key_order else ['date_time']
 
-            row = [date_time] + [data.get(k, '') for k in header[1:]]
-            rows.append(row)
-
-    if header is None:
-        header = ['date_time']
+    # 3. 依完整 header 產生輸出列
+    rows = []
+    for date_time, data in records:
+        row = [date_time] + [data.get(k, '') for k in header[1:]]
+        rows.append(row)
 
     return header, rows
 
