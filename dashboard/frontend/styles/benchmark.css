@@ -1,3 +1,26 @@
+.benchmark-runtime-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.benchmark-runtime-row label {
+  font-size: 13px;
+  color: #334155;
+  font-weight: 700;
+}
+
+.benchmark-runtime-row select {
+  min-width: 180px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  min-height: 38px;
+  background: #fff;
+}
+
 .benchmark-profile-row {
   display: flex;
   align-items: center;

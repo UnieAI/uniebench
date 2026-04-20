@@ -9,6 +9,7 @@ let selectedScriptPath = "";
 let selectedScriptName = "";
 let selectedScriptGroup = "default";
 let scriptsDir = "";
+let runtimeServerGroupId = "";
 let selectedScriptMeta = { tp_size: "", model_name: "", model_id: "", base_url: "", port: "" };
 let scriptModelNameOptions = [];
 
@@ -224,6 +225,56 @@ function renderGroupSelectors() {
   const moveSelect = document.getElementById("moveScriptGroupSelect");
   setSelectOptions(createSelect, selectedScriptGroup || "default");
   setSelectOptions(moveSelect, selectedScriptGroup || "default");
+}
+
+function renderRuntimeServerGroupSelect() {
+  const selectEl = document.getElementById("runtimeServerGroupSelect");
+  if (!(selectEl instanceof HTMLSelectElement)) return;
+  const groups = getGroupNames();
+  selectEl.innerHTML = groups
+    .map((group) => `<option value="${escapeHtml(group)}">${escapeHtml(group)}</option>`)
+    .join("");
+  const target = runtimeServerGroupId && groups.includes(runtimeServerGroupId)
+    ? runtimeServerGroupId
+    : (groups[0] || "default");
+  runtimeServerGroupId = target;
+  if (target) {
+    selectEl.value = target;
+  }
+}
+
+async function loadRuntimeTargetServerGroup() {
+  try {
+    const { ok, status, data } = await requestJson("/api/config/runtime-target");
+    if (!ok) {
+      throw new Error(data.detail || status);
+    }
+    runtimeServerGroupId = String(data.server_id || "").trim();
+  } catch {
+    runtimeServerGroupId = "";
+  }
+  renderRuntimeServerGroupSelect();
+}
+
+async function saveRuntimeServerGroup(groupId) {
+  const value = String(groupId || "").trim();
+  if (!value) return;
+  try {
+    const { ok, status, data } = await requestJson("/api/config/runtime-target", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ server_id: value }),
+    });
+    if (!ok) {
+      throw new Error(data.detail || status);
+    }
+    runtimeServerGroupId = String(data.server_id || value).trim() || value;
+    renderRuntimeServerGroupSelect();
+    setStatus("scriptsStatus", t("statusRuntimeServerGroupSaved", { id: runtimeServerGroupId }), "ok");
+  } catch (err) {
+    setStatus("scriptsStatus", t("statusRuntimeServerGroupSaveFail", { reason: err }), "err");
+    renderRuntimeServerGroupSelect();
+  }
 }
 
 function isStepStatus(value) {
@@ -600,6 +651,7 @@ export async function refreshScripts(preferPath = selectedScriptPath) {
     renderScriptDirHint();
     renderScriptList();
     renderGroupSelectors();
+    await loadRuntimeTargetServerGroup();
 
     const paths = new Set(scriptListData.map((item) => item.path));
     if (preferPath && paths.has(preferPath)) {
@@ -879,6 +931,7 @@ export function rerenderScriptsUi() {
   renderScriptDirHint();
   renderScriptList();
   renderGroupSelectors();
+  renderRuntimeServerGroupSelect();
   renderScriptMetaForm();
   renderScriptModelNameOptions();
   updateScriptEditorHint();
@@ -900,8 +953,9 @@ export function initScriptsFeature() {
   const closePopupBtn = document.getElementById("closeTestPopupBtn");
   const endpointInput = getPopupEndpointInput();
   const newScriptInput = document.getElementById("newScriptName");
+  const runtimeServerSelect = document.getElementById("runtimeServerGroupSelect");
 
-  if (!refreshBtn || !createBtn || !moveBtn || !saveBtn || !testBtn || !autoDetectBtn || !popupStartBtn || !popupStopBtn || !closePopupBtn || !endpointInput || !newScriptInput) {
+  if (!refreshBtn || !createBtn || !moveBtn || !saveBtn || !testBtn || !autoDetectBtn || !popupStartBtn || !popupStopBtn || !closePopupBtn || !endpointInput || !newScriptInput || !runtimeServerSelect) {
     return;
   }
 
@@ -923,6 +977,11 @@ export function initScriptsFeature() {
   popupStartBtn.addEventListener("click", startScriptTest);
   popupStopBtn.addEventListener("click", () => stopScriptTest({ silent: false }));
   closePopupBtn.addEventListener("click", closeTestPopup);
+  runtimeServerSelect.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement)) return;
+    void saveRuntimeServerGroup(target.value);
+  });
 
   newScriptInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {

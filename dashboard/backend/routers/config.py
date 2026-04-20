@@ -1,8 +1,14 @@
 from fastapi import APIRouter, HTTPException
 
 from dashboard.backend.core.settings import CONFIG_PATH, WRITE_LOCK, now_iso
-from dashboard.backend.schemas import ConfigPayload
-from dashboard.backend.services.config_service import read_config, save_config, validate_config_yaml
+from dashboard.backend.schemas import ConfigPayload, RuntimeTargetPayload
+from dashboard.backend.services.config_service import (
+    get_runtime_target,
+    read_config,
+    save_config,
+    update_runtime_target,
+    validate_config_yaml,
+)
 
 
 router = APIRouter(prefix="/api/config", tags=["config"])
@@ -40,3 +46,27 @@ def update_config(payload: ConfigPayload) -> dict:
         "path": str(CONFIG_PATH),
         "time": now_iso(),
     }
+
+
+@router.get("/runtime-target")
+def read_runtime_target() -> dict:
+    if not CONFIG_PATH.exists():
+        raise HTTPException(status_code=404, detail=f"Config file not found: {CONFIG_PATH}")
+    data = get_runtime_target(CONFIG_PATH)
+    data["time"] = now_iso()
+    return data
+
+
+@router.put("/runtime-target")
+def write_runtime_target(payload: RuntimeTargetPayload) -> dict:
+    if not CONFIG_PATH.exists():
+        raise HTTPException(status_code=404, detail=f"Config file not found: {CONFIG_PATH}")
+    data = update_runtime_target(
+        config_path=CONFIG_PATH,
+        lock=WRITE_LOCK,
+        server_id=payload.server_id,
+        benchmark_id=payload.benchmark_id,
+    )
+    data["saved"] = True
+    data["time"] = now_iso()
+    return data

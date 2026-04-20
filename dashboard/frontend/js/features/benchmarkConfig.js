@@ -14,6 +14,7 @@ const DEFAULT_PROFILE = {
 
 let profiles = [];
 let selectedProfileId = "default";
+let runtimeBenchmarkProfileId = "";
 let nameOptions = ["inferencemax-h100"];
 let tokenLengthOptions = ["none/1024"];
 let concurrencyOptions = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
@@ -91,6 +92,52 @@ function renderProfileSelect() {
     .join("");
 }
 
+function renderRuntimeBenchmarkProfileSelect() {
+  const selectEl = document.getElementById("runtimeBenchmarkProfileSelect");
+  if (!(selectEl instanceof HTMLSelectElement)) return;
+  const options = profiles.map((p) => p.id);
+  selectEl.innerHTML = options
+    .map((id) => `<option value="${escapeHtml(id)}">${escapeHtml(id)}</option>`)
+    .join("");
+  const target = runtimeBenchmarkProfileId && options.includes(runtimeBenchmarkProfileId)
+    ? runtimeBenchmarkProfileId
+    : (options[0] || "default");
+  runtimeBenchmarkProfileId = target;
+  if (target) selectEl.value = target;
+}
+
+async function loadRuntimeBenchmarkProfile() {
+  try {
+    const { ok, status, data } = await requestJson("/api/config/runtime-target");
+    if (!ok) throw new Error(data.detail || status);
+    runtimeBenchmarkProfileId = String(data.benchmark_id || "").trim();
+  } catch {
+    runtimeBenchmarkProfileId = "";
+  }
+  renderRuntimeBenchmarkProfileSelect();
+}
+
+async function saveRuntimeBenchmarkProfile(profileId) {
+  const value = String(profileId || "").trim();
+  if (!value) return;
+  try {
+    const { ok, status, data } = await requestJson("/api/config/runtime-target", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ benchmark_id: value }),
+    });
+    if (!ok) {
+      throw new Error(data.detail || status);
+    }
+    runtimeBenchmarkProfileId = String(data.benchmark_id || value).trim() || value;
+    renderRuntimeBenchmarkProfileSelect();
+    setStatus("benchmarkStatus", t("statusRuntimeBenchmarkProfileSaved", { id: runtimeBenchmarkProfileId }), "ok");
+  } catch (err) {
+    setStatus("benchmarkStatus", t("statusRuntimeBenchmarkProfileSaveFail", { reason: err }), "err");
+    renderRuntimeBenchmarkProfileSelect();
+  }
+}
+
 function renderProfileForm() {
   const profile = getSelectedProfile();
   if (!profile) return;
@@ -116,6 +163,7 @@ function renderProfileForm() {
 
 function rerenderAll() {
   renderProfileSelect();
+  renderRuntimeBenchmarkProfileSelect();
   renderProfileForm();
 }
 
@@ -134,6 +182,7 @@ export async function loadBenchmarkConfig() {
       ? data.concurrency_options.map((v) => Number(v)).filter((v) => Number.isFinite(v))
       : [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
     selectedProfileId = profiles[0]?.id || "default";
+    await loadRuntimeBenchmarkProfile();
     rerenderAll();
     setStatus("benchmarkStatus", t("statusBenchmarkLoaded", { count: profiles.length, time: data.time }), "ok");
   } catch (err) {
@@ -172,6 +221,10 @@ export async function saveBenchmarkConfig() {
       : [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
     if (!profiles.some((p) => p.id === selectedProfileId)) {
       selectedProfileId = profiles[0]?.id || "default";
+    }
+    if (!profiles.some((p) => p.id === runtimeBenchmarkProfileId)) {
+      runtimeBenchmarkProfileId = profiles[0]?.id || "default";
+      await saveRuntimeBenchmarkProfile(runtimeBenchmarkProfileId);
     }
     rerenderAll();
     setStatus("benchmarkStatus", t("statusBenchmarkSaved", { time: data.time }), "ok");
@@ -216,6 +269,10 @@ function deleteProfile() {
   }
   profiles = profiles.filter((p) => p.id !== selectedProfileId);
   selectedProfileId = profiles[0]?.id || "default";
+  if (!profiles.some((p) => p.id === runtimeBenchmarkProfileId)) {
+    runtimeBenchmarkProfileId = profiles[0]?.id || "default";
+    void saveRuntimeBenchmarkProfile(runtimeBenchmarkProfileId);
+  }
   rerenderAll();
   setStatus("benchmarkStatus", t("statusBenchmarkProfileDeleted"), "ok");
 }
@@ -241,15 +298,21 @@ function addTokenLengthOption() {
 
 export function initBenchmarkConfigFeature() {
   const profileSelect = document.getElementById("benchmarkProfileSelect");
+  const runtimeProfileSelect = document.getElementById("runtimeBenchmarkProfileSelect");
   const addProfileBtn = document.getElementById("benchmarkAddProfileBtn");
   const deleteProfileBtn = document.getElementById("benchmarkDeleteProfileBtn");
   const addTokenBtn = document.getElementById("benchmarkAddTokenLengthBtn");
   const reloadBtn = document.getElementById("benchmarkReloadBtn");
   const saveBtn = document.getElementById("benchmarkSaveBtn");
 
-  if (!profileSelect || !addProfileBtn || !deleteProfileBtn || !addTokenBtn || !reloadBtn || !saveBtn) return;
+  if (!profileSelect || !runtimeProfileSelect || !addProfileBtn || !deleteProfileBtn || !addTokenBtn || !reloadBtn || !saveBtn) return;
 
   profileSelect.addEventListener("change", onProfileChange);
+  runtimeProfileSelect.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement)) return;
+    void saveRuntimeBenchmarkProfile(target.value);
+  });
   addProfileBtn.addEventListener("click", addProfile);
   deleteProfileBtn.addEventListener("click", deleteProfile);
   addTokenBtn.addEventListener("click", addTokenLengthOption);

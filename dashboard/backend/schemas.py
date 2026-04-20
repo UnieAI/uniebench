@@ -54,3 +54,8 @@ class BenchmarkProfilePayload(BaseModel):
 
 class BenchmarkConfigPayload(BaseModel):
     profiles: list[BenchmarkProfilePayload] = []
+
+
+class RuntimeTargetPayload(BaseModel):
+    server_id: str | None = None
+    benchmark_id: str | None = None

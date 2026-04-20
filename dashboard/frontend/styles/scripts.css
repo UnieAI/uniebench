@@ -4,6 +4,29 @@
   gap: 12px;
 }
 
+.runtime-target-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.runtime-target-row label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.runtime-target-row select {
+  min-width: 180px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  min-height: 38px;
+  background: #fff;
+}
+
 .script-pane {
   border: 1px solid var(--border);
   border-radius: 10px;
