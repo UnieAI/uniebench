@@ -1,0 +1,28 @@
+services:
+  dashboard-api:
+    build:
+      context: .
+      dockerfile: dashboard/backend/Dockerfile
+    container_name: benchmark-dashboard-api
+    working_dir: /workspace/jeff/Benchmark-Autotest
+    volumes:
+      - ./:/workspace/jeff/Benchmark-Autotest
+    environment:
+      PROJECT_ROOT: /workspace/jeff/Benchmark-Autotest
+      SCRIPT_DIR: /workspace/jeff/Benchmark-Autotest/services
+      CONFIG_PATH: /workspace/jeff/Benchmark-Autotest/config/config.yaml
+    ports:
+      - "2148:2148"
+    gpus: all
+    restart: unless-stopped
+
+  dashboard-ui:
+    build:
+      context: ./dashboard/frontend
+      dockerfile: Dockerfile
+    container_name: benchmark-dashboard-ui
+    depends_on:
+      - dashboard-api
+    ports:
+      - "2147:2147"
+    restart: unless-stopped

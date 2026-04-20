@@ -1,0 +1,40 @@
+<section id="gpu" class="panel active">
+  <div id="gpuStatus" class="status" data-i18n="loading">讀取中...</div>
+  <div class="resource-grid">
+    <div class="metric-card">
+      <div class="label" data-i18n="metricCpu">CPU 使用率</div>
+      <div id="cpuUsage" class="value">--</div>
+    </div>
+    <div class="metric-card">
+      <div class="label" data-i18n="metricRamPct">RAM 使用率</div>
+      <div id="ramUsagePct" class="value">--</div>
+    </div>
+    <div class="metric-card">
+      <div class="label" data-i18n="metricRamMb">RAM 已用 / 總量 (MB)</div>
+      <div id="ramUsageMb" class="value" style="font-size: 16px;">--</div>
+    </div>
+  </div>
+  <table>
+    <colgroup>
+      <col class="col-gpu" />
+      <col class="col-name" />
+      <col class="col-util" />
+      <col class="col-mem" />
+      <col class="col-temp" />
+      <col class="col-power" />
+    </colgroup>
+    <thead>
+      <tr>
+        <th data-i18n="colGpu">GPU</th>
+        <th data-i18n="colName">Name</th>
+        <th data-i18n="colUtil">Util (%)</th>
+        <th data-i18n="colMemory">Memory (MB)</th>
+        <th data-i18n="colTemp">Temp (°C)</th>
+        <th data-i18n="colPower">Power (W)</th>
+      </tr>
+    </thead>
+    <tbody id="gpuBody">
+      <tr><td colspan="6" data-i18n="loading">載入中...</td></tr>
+    </tbody>
+  </table>
+</section>

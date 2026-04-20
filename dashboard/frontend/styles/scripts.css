@@ -1,0 +1,361 @@
+.script-layout {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 12px;
+}
+
+.script-pane {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  background: #f8fafc;
+  min-height: 560px;
+}
+
+.script-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 520px;
+  overflow: auto;
+  margin-top: 8px;
+  padding-right: 2px;
+}
+
+.script-group {
+  border: 1px solid #dbe3ee;
+  border-radius: 8px;
+  padding: 8px;
+  background: #f1f5f9;
+}
+
+.script-group-title {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #334155;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.script-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.script-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.script-item.active {
+  border-color: #0891b2;
+  box-shadow: 0 0 0 1px rgba(8, 145, 178, 0.2);
+}
+
+.script-name-row {
+  font-weight: 700;
+  color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.script-name-row-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.test-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.test-chip.success {
+  color: #166534;
+  background: #dcfce7;
+  border-color: #86efac;
+}
+
+.test-chip.fail {
+  color: #991b1b;
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
+.test-chip.untested {
+  color: #334155;
+  background: #e2e8f0;
+  border-color: #cbd5e1;
+}
+
+.script-toggle-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+  color: #334155;
+}
+
+.script-toggle-row label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.script-actions {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+  flex-wrap: wrap;
+}
+
+.endpoint-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.endpoint-row label {
+  font-size: 13px;
+  color: #334155;
+  font-weight: 600;
+}
+
+.endpoint-row input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  min-height: 38px;
+  background: #fff;
+  font-size: 14px;
+}
+
+.endpoint-popup-row {
+  margin-bottom: 10px;
+}
+
+.action.danger {
+  background: #b91c1c;
+}
+
+.new-script-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.new-script-row input,
+.new-script-row select,
+.move-script-row input,
+.move-script-row select {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  min-height: 38px;
+  background: #fff;
+  font-size: 14px;
+}
+
+.new-script-row select,
+.move-script-row select {
+  flex: 0 0 170px;
+}
+
+.move-script-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.script-editor {
+  width: 100%;
+  min-height: 470px;
+  font-family: "JetBrains Mono", "Consolas", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+}
+
+.hint {
+  font-size: 12px;
+  color: #64748b;
+  margin: 2px 0 8px;
+}
+
+.test-popup {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 50;
+}
+
+.test-popup.hidden {
+  display: none;
+}
+
+.test-popup-card {
+  width: min(560px, 96vw);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.2);
+}
+
+.test-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.test-popup-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.popup-action-row {
+  margin: 0 0 10px;
+}
+
+.test-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.test-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px;
+  background: #f8fafc;
+  font-size: 12px;
+  color: #475569;
+}
+
+.test-meta-item strong {
+  color: #0f172a;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.test-step-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.test-step-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f8fafc;
+}
+
+.test-step-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.test-step-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 74px;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.test-step-state.testing {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.test-step-state.success {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.test-step-state.fail {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.test-log-block {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 8px;
+}
+
+.test-log-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155;
+  margin-bottom: 6px;
+}
+
+.test-log-output {
+  margin: 0;
+  min-height: 110px;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  font-family: "JetBrains Mono", "Consolas", monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 900px) {
+  .script-layout { grid-template-columns: 1fr; }
+  .script-pane { min-height: auto; }
+  .script-editor { min-height: 320px; }
+  .test-meta-grid { grid-template-columns: 1fr; }
+}

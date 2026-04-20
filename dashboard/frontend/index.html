@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Benchmark Dashboard MVP</title>
+  <link rel="stylesheet" href="./styles/base.css" />
+  <link rel="stylesheet" href="./styles/monitor.css" />
+  <link rel="stylesheet" href="./styles/scripts.css" />
+</head>
+<body>
+  <div class="wrap">
+    <h1 class="title" data-i18n="pageTitle">Benchmark Dashboard MVP</h1>
+    <p class="sub" data-i18n="pageSubtitle">MVP: 即時系統資源監看 + 設定檔編輯器</p>
+
+    <div class="toolbar">
+      <label for="apiBase" data-i18n="apiBaseLabel">API Base URL</label>
+      <input id="apiBase" type="text" value="http://localhost:2148" />
+      <div class="lang-box">
+        <label for="langSelect" data-i18n="langLabel">語言</label>
+        <select id="langSelect">
+          <option value="zh">中文</option>
+          <option value="en">English</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="gpu" data-i18n="tabMonitor">系統資源監看</button>
+      <button class="tab-btn" data-tab="config" data-i18n="tabConfig">設定檔編輯器</button>
+      <button class="tab-btn" data-tab="scripts" data-i18n="tabScripts">服務腳本</button>
+    </div>
+    <div id="tabContent"></div>
+  </div>
+  <div class="app-version">v0.1.0</div>
+
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

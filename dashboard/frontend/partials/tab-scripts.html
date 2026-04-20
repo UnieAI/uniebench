@@ -1,0 +1,77 @@
+<section id="scripts" class="panel active">
+  <div id="scriptsStatus" class="status" data-i18n="scriptsNotLoaded">尚未載入腳本清單</div>
+  <div class="script-layout">
+    <div class="script-pane">
+      <div class="btn-row">
+        <button id="refreshScriptsBtn" class="action secondary" data-i18n="btnRefreshScripts">重新載入腳本</button>
+      </div>
+      <div id="scriptsDirHint" class="hint">--</div>
+      <div id="scriptList" class="script-list"></div>
+    </div>
+    <div class="script-pane">
+      <div class="new-script-row">
+        <select id="createScriptGroupSelect"></select>
+        <input id="newScriptName" type="text" data-i18n-placeholder="newScriptPlaceholder" placeholder="輸入新腳本名稱（例如 run_xxx.sh）" />
+        <button id="createScriptBtn" class="action" data-i18n="btnCreateScript">新增腳本</button>
+      </div>
+      <div class="move-script-row">
+        <select id="moveScriptGroupSelect"></select>
+        <input id="moveScriptGroupInput" type="text" data-i18n-placeholder="moveScriptGroupPlaceholder" placeholder="輸入目標群組（留空則使用左側選單）" />
+        <button id="moveScriptBtn" class="action secondary" data-i18n="btnMoveScript">移動腳本</button>
+      </div>
+      <div id="scriptEditorHint" class="hint" data-i18n="scriptEditorHint">點選左側腳本即可編輯</div>
+      <div class="script-actions">
+        <button id="saveScriptBtn" class="action" data-i18n="btnSaveScript">儲存腳本</button>
+        <button id="testScriptBtn" class="action secondary" data-i18n="btnTestScript">測試腳本</button>
+      </div>
+      <textarea id="scriptEditor" class="script-editor" spellcheck="false" data-i18n-placeholder="scriptEditorPlaceholder" placeholder="#!/bin/bash&#10;set -euo pipefail&#10;"></textarea>
+    </div>
+  </div>
+
+  <div id="scriptTestPopup" class="test-popup hidden">
+    <div class="test-popup-card">
+      <div class="test-popup-header">
+        <div class="test-popup-title" data-i18n="testPopupTitle">腳本測試狀態</div>
+        <button id="closeTestPopupBtn" class="action secondary" data-i18n="btnClose">關閉</button>
+      </div>
+      <div class="endpoint-row endpoint-popup-row">
+        <label for="popupScriptTestEndpoint" data-i18n="scriptEndpointLabel">Endpoint URL</label>
+        <input
+          id="popupScriptTestEndpoint"
+          type="text"
+          data-i18n-placeholder="scriptEndpointPlaceholder"
+          placeholder="http://localhost:8000"
+        />
+      </div>
+      <div class="script-actions popup-action-row">
+        <button id="popupStartTestScriptBtn" class="action" data-i18n="btnStartTestScript">啟動測試</button>
+        <button id="popupStopTestScriptBtn" class="action danger" data-i18n="btnStopTestScript">停止測試</button>
+      </div>
+      <div class="test-meta-grid">
+        <div class="test-meta-item"><span data-i18n="testScriptLabel">Script</span><strong id="testScriptNameValue">--</strong></div>
+        <div class="test-meta-item"><span data-i18n="testEndpointLabel">Endpoint</span><strong id="testEndpointValue">--</strong></div>
+        <div class="test-meta-item"><span data-i18n="testPidLabel">PID</span><strong id="testPidValue">--</strong></div>
+      </div>
+
+      <div class="test-step-list">
+        <div class="test-step-row">
+          <span class="test-step-label" data-i18n="testStepHealth">Health</span>
+          <span id="testStepHealthState" class="test-step-state testing" data-i18n="testStateTesting">測試中</span>
+        </div>
+        <div class="test-step-row">
+          <span class="test-step-label" data-i18n="testStepModels">v1/models</span>
+          <span id="testStepModelsState" class="test-step-state testing" data-i18n="testStateTesting">測試中</span>
+        </div>
+        <div class="test-step-row">
+          <span class="test-step-label" data-i18n="testStepCompletions">v1/completions</span>
+          <span id="testStepCompletionsState" class="test-step-state testing" data-i18n="testStateTesting">測試中</span>
+        </div>
+      </div>
+      <div id="testPopupDetail" class="hint">--</div>
+      <div class="test-log-block">
+        <div class="test-log-title" data-i18n="testLogTitle">執行 Log</div>
+        <pre id="testLogOutput" class="test-log-output" data-i18n="testNoLogs">尚無 log</pre>
+      </div>
+    </div>
+  </div>
+</section>
