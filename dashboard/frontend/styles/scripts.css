@@ -413,6 +413,55 @@
   word-break: break-word;
 }
 
+.host-test-popup-card {
+  width: min(760px, 96vw);
+}
+
+.host-test-guide {
+  margin-bottom: 8px;
+  color: #475569;
+  font-size: 13px;
+}
+
+.host-test-command {
+  margin: 0 0 10px;
+  min-height: 220px;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  font-family: "JetBrains Mono", "Consolas", monospace;
+  white-space: pre;
+}
+
+.host-test-result-input {
+  width: 100%;
+  min-height: 120px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.host-result {
+  font-weight: 700;
+}
+
+.host-result.success {
+  color: #166534;
+}
+
+.host-result.fail {
+  color: #991b1b;
+}
+
 @media (max-width: 900px) {
   .script-layout { grid-template-columns: 1fr; }
   .script-pane { min-height: auto; }

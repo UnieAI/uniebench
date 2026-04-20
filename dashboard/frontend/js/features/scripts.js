@@ -16,6 +16,7 @@ let scriptModelNameOptions = [];
 let testStatusPollTimer = null;
 let testState = null;
 let lastEndpointUrl = "http://localhost:8000";
+let hostTestResultText = "";
 
 function defaultScriptTemplate() {
   return "#!/bin/bash\nset -euo pipefail\n\n";
@@ -436,6 +437,97 @@ function hideTestPopup() {
   popup.classList.add("hidden");
 }
 
+function getHostTestEndpointInput() {
+  return document.getElementById("hostTestEndpointInput");
+}
+
+function showHostTestPopup() {
+  const popup = document.getElementById("hostTestPopup");
+  if (!popup) return;
+  popup.classList.remove("hidden");
+}
+
+function hideHostTestPopup() {
+  const popup = document.getElementById("hostTestPopup");
+  if (!popup) return;
+  popup.classList.add("hidden");
+}
+
+function getHostScriptPathForCommand() {
+  if (!selectedScriptPath) return "";
+  return `./services/${selectedScriptPath}`;
+}
+
+function buildHostTestCommand(endpointUrl) {
+  const scriptPath = getHostScriptPathForCommand();
+  const safeScriptPath = scriptPath || "./services/default/default_script.sh";
+  const safeEndpoint = String(endpointUrl || lastEndpointUrl || "http://localhost:8000").trim() || "http://localhost:8000";
+  return [
+    "cd /workspace/jeff/Benchmark-Autotest",
+    `SCRIPT_PATH="${safeScriptPath}"`,
+    `ENDPOINT="${safeEndpoint}"`,
+    "LOG_FILE=\"/tmp/host_script_test_$(date +%Y%m%d_%H%M%S).log\"",
+    "bash \"$SCRIPT_PATH\" > \"$LOG_FILE\" 2>&1 &",
+    "PID=$!",
+    "echo \"PID=$PID\"",
+    "HEALTH_OK=0",
+    "for i in $(seq 1 60); do",
+    "  if curl -fsS \"$ENDPOINT/health\" >/dev/null; then",
+    "    HEALTH_OK=1",
+    "    break",
+    "  fi",
+    "  sleep 10",
+    "done",
+    "if [ \"$HEALTH_OK\" -eq 1 ]; then",
+    "  echo \"PASS: health check success\"",
+    "else",
+    "  echo \"FAIL: health check timeout\"",
+    "fi",
+    "kill \"$PID\" 2>/dev/null || true",
+    "wait \"$PID\" 2>/dev/null || true",
+    "echo \"log: $LOG_FILE\"",
+  ].join("\n");
+}
+
+function renderHostTestPopup() {
+  const endpointInput = getHostTestEndpointInput();
+  if (endpointInput) {
+    if (!endpointInput.value) endpointInput.value = lastEndpointUrl;
+  }
+
+  const commandEl = document.getElementById("hostTestCommandOutput");
+  if (commandEl) {
+    commandEl.textContent = buildHostTestCommand(endpointInput?.value || lastEndpointUrl);
+  }
+
+  const resultInput = document.getElementById("hostTestResultInput");
+  if (resultInput instanceof HTMLTextAreaElement) {
+    resultInput.value = hostTestResultText;
+  }
+
+  const resultEchoEl = document.getElementById("hostTestResultEcho");
+  if (resultEchoEl) {
+    if (!hostTestResultText.trim()) {
+      resultEchoEl.textContent = "--";
+      resultEchoEl.className = "hint";
+      return;
+    }
+    const upper = hostTestResultText.toUpperCase();
+    if (upper.includes("PASS") || upper.includes("SUCCESS")) {
+      resultEchoEl.textContent = t("hostTestResultSuccess");
+      resultEchoEl.className = "hint host-result success";
+      return;
+    }
+    if (upper.includes("FAIL") || upper.includes("ERROR")) {
+      resultEchoEl.textContent = t("hostTestResultFail");
+      resultEchoEl.className = "hint host-result fail";
+      return;
+    }
+    resultEchoEl.textContent = t("hostTestResultSaved");
+    resultEchoEl.className = "hint host-result";
+  }
+}
+
 function setPopupActionButtonsByTestState() {
   const startBtn = document.getElementById("popupStartTestScriptBtn");
   const stopBtn = document.getElementById("popupStopTestScriptBtn");
@@ -813,6 +905,31 @@ function openTestPopup() {
   fetchTestStatus(true, true);
 }
 
+function openHostTestPopup() {
+  if (!selectedScriptPath) {
+    setStatus("scriptsStatus", t("statusScriptNeedSelect"), "err");
+    return;
+  }
+  const endpointInput = getHostTestEndpointInput();
+  if (endpointInput) {
+    endpointInput.value = lastEndpointUrl;
+  }
+  renderHostTestPopup();
+  showHostTestPopup();
+}
+
+function closeHostTestPopup() {
+  hideHostTestPopup();
+}
+
+function applyHostTestResult() {
+  const resultInput = document.getElementById("hostTestResultInput");
+  if (!(resultInput instanceof HTMLTextAreaElement)) return;
+  hostTestResultText = resultInput.value.trim();
+  renderHostTestPopup();
+  setStatus("scriptsStatus", t("statusHostTestResultSaved"), "ok");
+}
+
 async function startScriptTest() {
   if (!selectedScriptPath) {
     setStatus("scriptsStatus", t("statusScriptNeedSelect"), "err");
@@ -936,6 +1053,7 @@ export function rerenderScriptsUi() {
   renderScriptModelNameOptions();
   updateScriptEditorHint();
   renderTestPopup();
+  renderHostTestPopup();
 }
 
 export function initScriptsFeature() {
@@ -947,21 +1065,30 @@ export function initScriptsFeature() {
   const moveBtn = document.getElementById("moveScriptBtn");
   const saveBtn = document.getElementById("saveScriptBtn");
   const testBtn = document.getElementById("testScriptBtn");
+  const testInHostBtn = document.getElementById("testInHostBtn");
   const autoDetectBtn = document.getElementById("autoDetectScriptMetaBtn");
   const popupStartBtn = document.getElementById("popupStartTestScriptBtn");
   const popupStopBtn = document.getElementById("popupStopTestScriptBtn");
   const closePopupBtn = document.getElementById("closeTestPopupBtn");
+  const closeHostPopupBtn = document.getElementById("closeHostTestPopupBtn");
+  const hostEndpointInput = getHostTestEndpointInput();
+  const hostApplyResultBtn = document.getElementById("applyHostTestResultBtn");
   const endpointInput = getPopupEndpointInput();
   const newScriptInput = document.getElementById("newScriptName");
   const runtimeServerSelect = document.getElementById("runtimeServerGroupSelect");
 
-  if (!refreshBtn || !createBtn || !moveBtn || !saveBtn || !testBtn || !autoDetectBtn || !popupStartBtn || !popupStopBtn || !closePopupBtn || !endpointInput || !newScriptInput || !runtimeServerSelect) {
+  if (!refreshBtn || !createBtn || !moveBtn || !saveBtn || !testBtn || !testInHostBtn || !autoDetectBtn || !popupStartBtn || !popupStopBtn || !closePopupBtn || !closeHostPopupBtn || !hostEndpointInput || !hostApplyResultBtn || !endpointInput || !newScriptInput || !runtimeServerSelect) {
     return;
   }
 
   endpointInput.value = lastEndpointUrl;
   endpointInput.addEventListener("input", () => {
     lastEndpointUrl = endpointInput.value;
+  });
+  hostEndpointInput.value = lastEndpointUrl;
+  hostEndpointInput.addEventListener("input", () => {
+    lastEndpointUrl = hostEndpointInput.value;
+    renderHostTestPopup();
   });
 
   listEl.addEventListener("click", onScriptListClick);
@@ -972,11 +1099,14 @@ export function initScriptsFeature() {
   moveBtn.addEventListener("click", moveScript);
   saveBtn.addEventListener("click", saveScript);
   testBtn.addEventListener("click", openTestPopup);
+  testInHostBtn.addEventListener("click", openHostTestPopup);
   autoDetectBtn.addEventListener("click", autoDetectAllScriptMeta);
 
   popupStartBtn.addEventListener("click", startScriptTest);
   popupStopBtn.addEventListener("click", () => stopScriptTest({ silent: false }));
   closePopupBtn.addEventListener("click", closeTestPopup);
+  closeHostPopupBtn.addEventListener("click", closeHostTestPopup);
+  hostApplyResultBtn.addEventListener("click", applyHostTestResult);
   runtimeServerSelect.addEventListener("change", (event) => {
     const target = event.target;
     if (!(target instanceof HTMLSelectElement)) return;
@@ -991,6 +1121,7 @@ export function initScriptsFeature() {
   });
 
   renderTestPopup();
+  renderHostTestPopup();
   renderScriptMetaForm();
   void refreshScriptModelNameOptions();
   fetchTestStatus(true, true);

@@ -27,6 +27,7 @@
       <div class="script-actions">
         <button id="saveScriptBtn" class="action" data-i18n="btnSaveScript">儲存腳本</button>
         <button id="testScriptBtn" class="action secondary" data-i18n="btnTestScript">測試腳本</button>
+        <button id="testInHostBtn" class="action secondary" data-i18n="btnTestInHost">在 Host 測試</button>
         <button id="autoDetectScriptMetaBtn" class="action secondary" data-i18n="btnAutoDetect">自動偵測</button>
       </div>
       <div class="script-meta-grid">
@@ -110,6 +111,41 @@
         <div class="test-log-title" data-i18n="testLogTitle">執行 Log</div>
         <pre id="testLogOutput" class="test-log-output" data-i18n="testNoLogs">尚無 log</pre>
       </div>
+    </div>
+  </div>
+
+  <div id="hostTestPopup" class="test-popup hidden">
+    <div class="test-popup-card host-test-popup-card">
+      <div class="test-popup-header">
+        <div class="test-popup-title" data-i18n="hostTestPopupTitle">Host 測試指引</div>
+        <button id="closeHostTestPopupBtn" class="action secondary" data-i18n="btnClose">關閉</button>
+      </div>
+      <div class="endpoint-row endpoint-popup-row">
+        <label for="hostTestEndpointInput" data-i18n="scriptEndpointLabel">Endpoint URL</label>
+        <input
+          id="hostTestEndpointInput"
+          type="text"
+          data-i18n-placeholder="scriptEndpointPlaceholder"
+          placeholder="http://localhost:8000"
+        />
+      </div>
+      <div class="host-test-guide" data-i18n="hostTestGuideText">
+        請在 host 終端機貼上並執行下方腳本，完成後將結果回填到下方欄位。
+      </div>
+      <pre id="hostTestCommandOutput" class="host-test-command"></pre>
+      <div class="endpoint-row">
+        <label for="hostTestResultInput" data-i18n="hostTestResultLabel">測試結果回填</label>
+        <textarea
+          id="hostTestResultInput"
+          class="host-test-result-input"
+          data-i18n-placeholder="hostTestResultPlaceholder"
+          placeholder="貼上 host 執行結果（例如 PASS 或 FAIL + 訊息）"
+        ></textarea>
+      </div>
+      <div class="script-actions popup-action-row">
+        <button id="applyHostTestResultBtn" class="action" data-i18n="btnApplyHostResult">回填結果</button>
+      </div>
+      <div id="hostTestResultEcho" class="hint">--</div>
     </div>
   </div>
 </section>
