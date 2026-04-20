@@ -18,6 +18,7 @@ let testState = null;
 let lastEndpointUrl = "http://localhost:8000";
 let hostTestResultText = "";
 let hostTestCommand = "";
+let hostTestDecodedResult = null;
 
 function defaultScriptTemplate() {
   return "#!/bin/bash\nset -euo pipefail\n\n";
@@ -482,20 +483,69 @@ function renderHostTestPopup() {
       resultEchoEl.className = "hint";
       return;
     }
-    const upper = hostTestResultText.toUpperCase();
-    if (upper.includes("PASS") || upper.includes("SUCCESS")) {
-      resultEchoEl.textContent = t("hostTestResultSuccess");
+
+    if (hostTestDecodedResult && hostTestDecodedResult.status === "PASS") {
+      const reason = hostTestDecodedResult.reason || "ok";
+      resultEchoEl.textContent = `${t("hostTestResultSuccess")} (${reason})`;
       resultEchoEl.className = "hint host-result success";
       return;
     }
-    if (upper.includes("FAIL") || upper.includes("ERROR")) {
-      resultEchoEl.textContent = t("hostTestResultFail");
+    if (hostTestDecodedResult && hostTestDecodedResult.status === "FAIL") {
+      const reason = hostTestDecodedResult.reason || "unknown";
+      resultEchoEl.textContent = `${t("hostTestResultFail")} (${reason})`;
       resultEchoEl.className = "hint host-result fail";
       return;
     }
-    resultEchoEl.textContent = t("hostTestResultSaved");
-    resultEchoEl.className = "hint host-result";
+    resultEchoEl.textContent = t("hostTestResultInvalid");
+    resultEchoEl.className = "hint host-result fail";
   }
+}
+
+function decodeHostResult(rawText) {
+  const text = String(rawText || "").trim();
+  if (!text) {
+    throw new Error(t("statusHostTestResultEmpty"));
+  }
+
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  const targetLine = lines.find((line) => line.includes("HOST_TEST_RESULT_B64=")) || "";
+  if (!targetLine) {
+    throw new Error(t("statusHostTestResultFormatInvalid"));
+  }
+
+  const match = targetLine.match(/HOST_TEST_RESULT_B64=([A-Za-z0-9+/=_-]+)/);
+  if (!match || !match[1]) {
+    throw new Error(t("statusHostTestResultFormatInvalid"));
+  }
+
+  let parsed;
+  try {
+    const b64 = match[1];
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    const jsonText = new TextDecoder("utf-8").decode(bytes);
+    parsed = JSON.parse(jsonText);
+  } catch {
+    throw new Error(t("statusHostTestResultDecodeFail"));
+  }
+
+  const statusRaw = String(parsed?.status || "").trim().toUpperCase();
+  const status = statusRaw === "PASS" ? "PASS" : "FAIL";
+  const result = {
+    status,
+    reason: String(parsed?.reason || "").trim(),
+    log_file: String(parsed?.log_file || "").trim(),
+    endpoint: String(parsed?.endpoint || "").trim(),
+    script: String(parsed?.script || "").trim(),
+  };
+  return result;
 }
 
 function setPopupActionButtonsByTestState() {
@@ -896,7 +946,30 @@ function closeHostTestPopup() {
 function applyHostTestResult() {
   const resultInput = document.getElementById("hostTestResultInput");
   if (!(resultInput instanceof HTMLTextAreaElement)) return;
-  hostTestResultText = resultInput.value.trim();
+  try {
+    const decoded = decodeHostResult(resultInput.value);
+    hostTestDecodedResult = decoded;
+    hostTestResultText = [
+      `HOST_TEST_RESULT status=${decoded.status}`,
+      `reason=${decoded.reason || "unknown"}`,
+      `log_file=${decoded.log_file || "-"}`,
+      `endpoint=${decoded.endpoint || "-"}`,
+      `script=${decoded.script || "-"}`,
+    ].join(" ");
+    if (selectedScriptPath) {
+      updateScriptLastTestByPath(
+        selectedScriptPath,
+        decoded.status === "PASS" ? "success" : "fail",
+        new Date().toISOString(),
+        `${decoded.reason || "unknown"} | ${decoded.log_file || "-"}`,
+      );
+    }
+  } catch (err) {
+    hostTestDecodedResult = null;
+    setStatus("scriptsStatus", t("statusHostTestResultDecodeFail", { reason: err }), "err");
+    renderHostTestPopup();
+    return;
+  }
   renderHostTestPopup();
   setStatus("scriptsStatus", t("statusHostTestResultSaved"), "ok");
 }
@@ -1087,6 +1160,7 @@ export function initScriptsFeature() {
   hostEndpointInput.addEventListener("input", () => {
     lastEndpointUrl = hostEndpointInput.value;
     hostTestCommand = "";
+    hostTestDecodedResult = null;
     renderHostTestPopup();
   });
 
