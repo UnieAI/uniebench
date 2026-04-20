@@ -186,3 +186,70 @@ textarea {
     grid-template-columns: 1fr;
   }
 }
+
+.ready-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.ready-card {
+  border: 1px solid #dbe3ee;
+  border-radius: 10px;
+  padding: 10px;
+  background: #f8fafc;
+}
+
+.ready-card label {
+  display: block;
+  font-size: 13px;
+  color: #334155;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.ready-card input,
+.ready-card select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  min-height: 38px;
+  font-size: 14px;
+  background: #fff;
+}
+
+.ready-list-wrap {
+  border: 1px solid #dbe3ee;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 10px;
+}
+
+.ready-list-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: #0f172a;
+  margin-bottom: 8px;
+}
+
+.ready-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ready-item-row {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px;
+  font-size: 13px;
+  color: #1f2937;
+}
+
+.ready-empty {
+  font-size: 13px;
+  color: #64748b;
+}

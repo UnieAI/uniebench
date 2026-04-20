@@ -1,1 +1,21 @@
-<section id="readyToRun" class="panel active"></section>
+<section id="readyToRun" class="panel active">
+  <div id="readyStatus" class="status" data-i18n="loading">讀取中...</div>
+  <div class="ready-meta-grid">
+    <div class="ready-card">
+      <label for="readyTestNameInput" data-i18n="testNameLabel">測試名稱</label>
+      <input id="readyTestNameInput" type="text" />
+    </div>
+    <div class="ready-card">
+      <label for="readySheetNameSelect" data-i18n="sheetNameLabel">sheet 名稱</label>
+      <select id="readySheetNameSelect"></select>
+    </div>
+    <div class="ready-card">
+      <label for="readyPlatformNameInput" data-i18n="platformNameLabel">測試平台名稱</label>
+      <input id="readyPlatformNameInput" type="text" />
+    </div>
+  </div>
+  <div class="ready-list-wrap">
+    <div class="ready-list-title" data-i18n="readyItemsTitle">預計測試條目</div>
+    <div id="readyItemsList" class="ready-items-list"></div>
+  </div>
+</section>

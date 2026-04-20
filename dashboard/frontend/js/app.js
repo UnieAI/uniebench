@@ -2,14 +2,12 @@ import { initTabs } from "./core/tabs.js";
 import { applyI18n, initLanguageSelector } from "./core/i18n.js";
 import { initBenchmarkConfigFeature, loadBenchmarkConfig } from "./features/benchmarkConfig.js";
 import { initMonitor, refreshMonitor, setMonitorFloatingMode } from "./features/monitor.js";
-import { initConfigEditor, loadConfig } from "./features/configEditor.js";
 import { initGlobalConfigFeature, loadGlobalConfig } from "./features/globalConfig.js";
+import { initReadyToRunFeature, loadReadyToRun } from "./features/readyToRun.js";
 import { initScriptsFeature, refreshScripts, rerenderScriptsUi } from "./features/scripts.js";
-import { initTestMetaFeature, loadTestMeta } from "./features/testMeta.js";
 
 const TAB_PARTIALS = {
   gpu: "./partials/tab-monitor.html",
-  config: "./partials/tab-config.html",
   scripts: "./partials/tab-scripts.html",
   globalConfig: "./partials/tab-global-config.html",
   benchmarkConfig: "./partials/tab-benchmark.html",
@@ -71,12 +69,6 @@ async function activateTab(tab) {
     return;
   }
 
-  if (tab === "config") {
-    initConfigEditor();
-    await loadConfig();
-    return;
-  }
-
   if (tab === "scripts") {
     initScriptsFeature();
     rerenderScriptsUi();
@@ -93,6 +85,12 @@ async function activateTab(tab) {
   if (tab === "benchmarkConfig") {
     initBenchmarkConfigFeature();
     await loadBenchmarkConfig();
+    return;
+  }
+
+  if (tab === "readyToRun") {
+    initReadyToRunFeature();
+    await loadReadyToRun();
     return;
   }
 }
@@ -116,11 +114,6 @@ async function onLanguageChanged() {
     return;
   }
 
-  if (activeTab === "config") {
-    await loadConfig();
-    return;
-  }
-
   if (activeTab === "scripts") {
     rerenderScriptsUi();
     await refreshScripts();
@@ -134,12 +127,15 @@ async function onLanguageChanged() {
 
   if (activeTab === "benchmarkConfig") {
     await loadBenchmarkConfig();
+    return;
+  }
+
+  if (activeTab === "readyToRun") {
+    await loadReadyToRun();
   }
 }
 
 async function init() {
-  initTestMetaFeature();
-  await loadTestMeta();
   ensureMonitorPolling();
   await activateTab(detectInitialTab());
   initLanguageSelector("langSelect", onLanguageChanged);
