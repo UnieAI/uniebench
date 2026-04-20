@@ -81,11 +81,14 @@ function renderFloatingMonitor(data) {
   const cpuText = pct(system.cpu_percent) === null ? t("na") : `${pct(system.cpu_percent)}%`;
   const ramText = pct(system.ram_percent) === null ? t("na") : `${pct(system.ram_percent)}%`;
 
-  const header = `
+  const titleRow = `
     <div class="floating-monitor-title-row">
       <div class="floating-monitor-title">${t("tabMonitor")}</div>
       <button id="floatingMonitorToggleBtn" class="floating-monitor-toggle" type="button">${floatingCollapsed ? "+" : "−"}</button>
     </div>
+  `;
+
+  const bodyHeader = `
     <div class="floating-monitor-system">
       <span>${t("metricCpu")}: ${cpuText}</span>
       <span>${t("metricRamPct")}: ${ramText}</span>
@@ -99,7 +102,7 @@ function renderFloatingMonitor(data) {
 
   if (!data || !data.available || gpus.length === 0) {
     root.classList.remove("hidden");
-    root.innerHTML = `${header}<div class="floating-monitor-empty">${t("rowNoData")}</div>`;
+    root.innerHTML = `${titleRow}${floatingCollapsed ? "" : `<div class="floating-monitor-empty">${t("rowNoData")}</div>`}`;
     const toggleBtn = document.getElementById("floatingMonitorToggleBtn");
     if (toggleBtn) {
       toggleBtn.addEventListener("click", () => {
@@ -112,7 +115,7 @@ function renderFloatingMonitor(data) {
 
   if (floatingCollapsed) {
     root.classList.remove("hidden");
-    root.innerHTML = header;
+    root.innerHTML = titleRow;
     const toggleBtn = document.getElementById("floatingMonitorToggleBtn");
     if (toggleBtn) {
       toggleBtn.addEventListener("click", () => {
@@ -136,7 +139,7 @@ function renderFloatingMonitor(data) {
   }).join("");
 
   root.classList.remove("hidden");
-  root.innerHTML = header + rows;
+  root.innerHTML = titleRow + bodyHeader + rows;
   const toggleBtn = document.getElementById("floatingMonitorToggleBtn");
   if (toggleBtn) {
     toggleBtn.addEventListener("click", () => {
