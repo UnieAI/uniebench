@@ -1,7 +1,7 @@
 import { initTabs } from "./core/tabs.js";
 import { applyI18n, initLanguageSelector } from "./core/i18n.js";
 import { initBenchmarkConfigFeature, loadBenchmarkConfig } from "./features/benchmarkConfig.js";
-import { initMonitor, refreshMonitor } from "./features/monitor.js";
+import { initMonitor, refreshMonitor, setMonitorFloatingMode } from "./features/monitor.js";
 import { initConfigEditor, loadConfig } from "./features/configEditor.js";
 import { initGlobalConfigFeature, loadGlobalConfig } from "./features/globalConfig.js";
 import { initScriptsFeature, refreshScripts, rerenderScriptsUi } from "./features/scripts.js";
@@ -42,6 +42,7 @@ async function loadTabPartial(tab) {
 async function activateTab(tab) {
   await loadTabPartial(tab);
   activeTab = tab;
+  setMonitorFloatingMode(tab !== "gpu");
 
   if (tab === "gpu") {
     initMonitor();
@@ -84,6 +85,10 @@ function detectInitialTab() {
 }
 
 async function onLanguageChanged() {
+  if (activeTab !== "gpu") {
+    setMonitorFloatingMode(true);
+  }
+
   if (activeTab === "gpu") {
     await refreshMonitor();
     return;
