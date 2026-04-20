@@ -133,6 +133,31 @@ th { background: #ecfeff; }
   margin-bottom: 6px;
 }
 
+.floating-monitor-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.floating-monitor-title-row .floating-monitor-title {
+  margin-bottom: 0;
+}
+
+.floating-monitor-toggle {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #0f172a;
+  font-weight: 700;
+  width: 26px;
+  height: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
 .floating-monitor-system {
   display: flex;
   gap: 10px;

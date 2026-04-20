@@ -3,6 +3,8 @@ import { t } from "../core/i18n.js";
 import { formatMemText, memPct, num, pct, setStatus, shortenGpuName } from "../core/ui.js";
 
 let floatingEnabled = false;
+let floatingCollapsed = false;
+let lastMonitorData = null;
 
 function setGpuBodyMessage(messageKey) {
   const gpuBody = document.getElementById("gpuBody");
@@ -80,7 +82,10 @@ function renderFloatingMonitor(data) {
   const ramText = pct(system.ram_percent) === null ? t("na") : `${pct(system.ram_percent)}%`;
 
   const header = `
-    <div class="floating-monitor-title">${t("tabMonitor")}</div>
+    <div class="floating-monitor-title-row">
+      <div class="floating-monitor-title">${t("tabMonitor")}</div>
+      <button id="floatingMonitorToggleBtn" class="floating-monitor-toggle" type="button">${floatingCollapsed ? "+" : "−"}</button>
+    </div>
     <div class="floating-monitor-system">
       <span>${t("metricCpu")}: ${cpuText}</span>
       <span>${t("metricRamPct")}: ${ramText}</span>
@@ -95,6 +100,26 @@ function renderFloatingMonitor(data) {
   if (!data || !data.available || gpus.length === 0) {
     root.classList.remove("hidden");
     root.innerHTML = `${header}<div class="floating-monitor-empty">${t("rowNoData")}</div>`;
+    const toggleBtn = document.getElementById("floatingMonitorToggleBtn");
+    if (toggleBtn) {
+      toggleBtn.addEventListener("click", () => {
+        floatingCollapsed = !floatingCollapsed;
+        renderFloatingMonitor(lastMonitorData);
+      });
+    }
+    return;
+  }
+
+  if (floatingCollapsed) {
+    root.classList.remove("hidden");
+    root.innerHTML = header;
+    const toggleBtn = document.getElementById("floatingMonitorToggleBtn");
+    if (toggleBtn) {
+      toggleBtn.addEventListener("click", () => {
+        floatingCollapsed = !floatingCollapsed;
+        renderFloatingMonitor(lastMonitorData);
+      });
+    }
     return;
   }
 
@@ -112,11 +137,19 @@ function renderFloatingMonitor(data) {
 
   root.classList.remove("hidden");
   root.innerHTML = header + rows;
+  const toggleBtn = document.getElementById("floatingMonitorToggleBtn");
+  if (toggleBtn) {
+    toggleBtn.addEventListener("click", () => {
+      floatingCollapsed = !floatingCollapsed;
+      renderFloatingMonitor(lastMonitorData);
+    });
+  }
 }
 
 export async function refreshMonitor() {
   try {
     const { ok, status, data } = await requestJson("/api/gpu");
+    lastMonitorData = data;
     renderSystem(data.system || null);
     renderFloatingMonitor(data);
 
@@ -135,6 +168,7 @@ export async function refreshMonitor() {
     setStatus("gpuStatus", t("statusUpdated", { time: data.time }), "ok");
     renderFullGpuTable(data.gpus);
   } catch (err) {
+    lastMonitorData = null;
     renderSystem(null);
     renderFloatingMonitor(null);
     setStatus("gpuStatus", t("statusConnError", { reason: err }), "err");
