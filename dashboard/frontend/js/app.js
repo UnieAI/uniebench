@@ -15,6 +15,7 @@ const TAB_PARTIALS = {
   benchmarkConfig: "./partials/tab-benchmark.html",
   readyToRun: "./partials/tab-ready.html",
 };
+const LAST_TAB_KEY = "dashboard_last_tab";
 
 let activeTab = "gpu";
 let monitorPollingStarted = false;
@@ -40,8 +41,12 @@ async function loadTabPartial(tab) {
 }
 
 async function activateTab(tab) {
+  if (!(tab in TAB_PARTIALS)) {
+    tab = "gpu";
+  }
   await loadTabPartial(tab);
   activeTab = tab;
+  localStorage.setItem(LAST_TAB_KEY, tab);
   setMonitorFloatingMode(tab !== "gpu");
 
   if (tab === "gpu") {
@@ -80,6 +85,10 @@ async function activateTab(tab) {
 }
 
 function detectInitialTab() {
+  const saved = localStorage.getItem(LAST_TAB_KEY);
+  if (saved && saved in TAB_PARTIALS) {
+    return saved;
+  }
   const activeBtn = document.querySelector(".tab-btn.active");
   return activeBtn?.dataset.tab || "gpu";
 }
