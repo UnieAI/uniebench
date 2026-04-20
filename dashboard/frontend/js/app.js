@@ -20,6 +20,14 @@ const LAST_TAB_KEY = "dashboard_last_tab";
 let activeTab = "gpu";
 let monitorPollingStarted = false;
 
+function syncTabButtonActive(tab) {
+  const buttons = document.querySelectorAll(".tab-btn");
+  buttons.forEach((btn) => {
+    const isActive = btn.dataset.tab === tab;
+    btn.classList.toggle("active", isActive);
+  });
+}
+
 function getTabContentRoot() {
   return document.getElementById("tabContent");
 }
@@ -44,6 +52,7 @@ async function activateTab(tab) {
   if (!(tab in TAB_PARTIALS)) {
     tab = "gpu";
   }
+  syncTabButtonActive(tab);
   await loadTabPartial(tab);
   activeTab = tab;
   localStorage.setItem(LAST_TAB_KEY, tab);
