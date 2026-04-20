@@ -142,7 +142,7 @@ function detectMetaFromScriptContent(scriptContent) {
   const port = detectDefaultPortFromScriptContent(text);
 
   return {
-    tp_size: tpSize || "",
+    tp_size: tpSize || "1",
     model_name: extractModelNameFromServeTarget(serveTarget),
     model_id: servedModelName || serveTarget,
     base_url: "http://localhost",
@@ -303,25 +303,11 @@ function updateScriptEditorHint() {
   }
 }
 
-function onAutoDetectClick(event) {
-  const target = event.target;
-  if (!(target instanceof HTMLButtonElement)) return;
-  if (!target.classList.contains("script-auto-detect-btn")) return;
-  const field = String(target.dataset.field || "");
+function autoDetectAllScriptMeta() {
   const detected = detectMetaFromScriptContent(getScriptEditorContent());
-  const current = collectScriptMetaForm();
-  const next = { ...current };
-
-  if (field === "tp_size") next.tp_size = detected.tp_size;
-  else if (field === "model_name") next.model_name = detected.model_name;
-  else if (field === "model_id") next.model_id = detected.model_id;
-  else if (field === "base_url") next.base_url = detected.base_url;
-  else if (field === "port") next.port = detected.port;
-  else return;
-
-  selectedScriptMeta = normalizeScriptMeta(next);
+  selectedScriptMeta = normalizeScriptMeta(detected);
   renderScriptMetaForm();
-  setStatus("scriptsStatus", t("statusScriptAutoDetectApplied", { field }), "ok");
+  setStatus("scriptsStatus", t("statusScriptAutoDetectAppliedAll"), "ok");
 }
 
 function renderScriptList() {
@@ -900,22 +886,22 @@ export function rerenderScriptsUi() {
 }
 
 export function initScriptsFeature() {
-  const scriptsPanel = document.getElementById("scripts");
   const listEl = document.getElementById("scriptList");
-  if (!scriptsPanel || !listEl) return;
+  if (!listEl) return;
 
   const refreshBtn = document.getElementById("refreshScriptsBtn");
   const createBtn = document.getElementById("createScriptBtn");
   const moveBtn = document.getElementById("moveScriptBtn");
   const saveBtn = document.getElementById("saveScriptBtn");
   const testBtn = document.getElementById("testScriptBtn");
+  const autoDetectBtn = document.getElementById("autoDetectScriptMetaBtn");
   const popupStartBtn = document.getElementById("popupStartTestScriptBtn");
   const popupStopBtn = document.getElementById("popupStopTestScriptBtn");
   const closePopupBtn = document.getElementById("closeTestPopupBtn");
   const endpointInput = getPopupEndpointInput();
   const newScriptInput = document.getElementById("newScriptName");
 
-  if (!refreshBtn || !createBtn || !moveBtn || !saveBtn || !testBtn || !popupStartBtn || !popupStopBtn || !closePopupBtn || !endpointInput || !newScriptInput) {
+  if (!refreshBtn || !createBtn || !moveBtn || !saveBtn || !testBtn || !autoDetectBtn || !popupStartBtn || !popupStopBtn || !closePopupBtn || !endpointInput || !newScriptInput) {
     return;
   }
 
@@ -926,13 +912,13 @@ export function initScriptsFeature() {
 
   listEl.addEventListener("click", onScriptListClick);
   listEl.addEventListener("change", onScriptListToggleChange);
-  scriptsPanel.addEventListener("click", onAutoDetectClick);
 
   refreshBtn.addEventListener("click", () => refreshScripts(selectedScriptPath));
   createBtn.addEventListener("click", createScript);
   moveBtn.addEventListener("click", moveScript);
   saveBtn.addEventListener("click", saveScript);
   testBtn.addEventListener("click", openTestPopup);
+  autoDetectBtn.addEventListener("click", autoDetectAllScriptMeta);
 
   popupStartBtn.addEventListener("click", startScriptTest);
   popupStopBtn.addEventListener("click", () => stopScriptTest({ silent: false }));

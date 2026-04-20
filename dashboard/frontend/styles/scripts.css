@@ -162,11 +162,6 @@
   font-size: 14px;
 }
 
-.script-auto-detect-btn {
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
-
 .endpoint-row {
   display: flex;
   flex-direction: column;

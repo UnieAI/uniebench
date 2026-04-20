@@ -23,13 +23,13 @@
       <div class="script-actions">
         <button id="saveScriptBtn" class="action" data-i18n="btnSaveScript">儲存腳本</button>
         <button id="testScriptBtn" class="action secondary" data-i18n="btnTestScript">測試腳本</button>
+        <button id="autoDetectScriptMetaBtn" class="action secondary" data-i18n="btnAutoDetect">自動偵測</button>
       </div>
       <div class="script-meta-grid">
         <div class="script-meta-item">
           <label for="scriptMetaTpSize" data-i18n="scriptMetaTpSizeLabel">tp_size</label>
           <div class="script-meta-input-row">
             <input id="scriptMetaTpSize" type="text" />
-            <button class="action secondary script-auto-detect-btn" data-field="tp_size" data-i18n="btnAutoDetect">自動偵測</button>
           </div>
         </div>
         <div class="script-meta-item">
@@ -37,28 +37,24 @@
           <div class="script-meta-input-row">
             <input id="scriptMetaModelName" type="text" list="scriptModelNameOptions" />
             <datalist id="scriptModelNameOptions"></datalist>
-            <button class="action secondary script-auto-detect-btn" data-field="model_name" data-i18n="btnAutoDetect">自動偵測</button>
           </div>
         </div>
         <div class="script-meta-item">
           <label for="scriptMetaModelId" data-i18n="scriptMetaModelIdLabel">model_id</label>
           <div class="script-meta-input-row">
             <input id="scriptMetaModelId" type="text" />
-            <button class="action secondary script-auto-detect-btn" data-field="model_id" data-i18n="btnAutoDetect">自動偵測</button>
           </div>
         </div>
         <div class="script-meta-item">
           <label for="scriptMetaBaseUrl" data-i18n="scriptMetaBaseUrlLabel">base_url</label>
           <div class="script-meta-input-row">
             <input id="scriptMetaBaseUrl" type="text" placeholder="http://localhost" />
-            <button class="action secondary script-auto-detect-btn" data-field="base_url" data-i18n="btnAutoDetect">自動偵測</button>
           </div>
         </div>
         <div class="script-meta-item">
           <label for="scriptMetaPort" data-i18n="scriptMetaPortLabel">port</label>
           <div class="script-meta-input-row">
             <input id="scriptMetaPort" type="text" />
-            <button class="action secondary script-auto-detect-btn" data-field="port" data-i18n="btnAutoDetect">自動偵測</button>
           </div>
         </div>
       </div>
