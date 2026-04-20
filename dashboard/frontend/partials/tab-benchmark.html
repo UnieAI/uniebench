@@ -1,0 +1,60 @@
+<section id="benchmarkConfig" class="panel active">
+  <div id="benchmarkStatus" class="status" data-i18n="benchmarkNotLoaded">尚未載入 Benchmark 設定</div>
+
+  <div class="benchmark-profile-row">
+    <label for="benchmarkProfileSelect" data-i18n="benchmarkProfileLabel">設定檔</label>
+    <select id="benchmarkProfileSelect"></select>
+    <input
+      id="benchmarkNewProfileId"
+      type="text"
+      data-i18n-placeholder="benchmarkNewProfilePlaceholder"
+      placeholder="輸入新設定檔名稱"
+    />
+    <button id="benchmarkAddProfileBtn" class="action secondary" data-i18n="btnAddProfile">新增</button>
+    <button id="benchmarkDeleteProfileBtn" class="action danger" data-i18n="btnDeleteProfile">刪除</button>
+  </div>
+
+  <div class="benchmark-grid">
+    <div class="benchmark-card">
+      <label for="benchmarkNameSelect" data-i18n="benchmarkNameLabel">name</label>
+      <select id="benchmarkNameSelect" multiple></select>
+    </div>
+
+    <div class="benchmark-card">
+      <label for="benchmarkEndpointType" data-i18n="benchmarkEndpointTypeLabel">endpoint_type</label>
+      <select id="benchmarkEndpointType">
+        <option value="completions">completions</option>
+        <option value="chat">chat</option>
+      </select>
+    </div>
+
+    <div class="benchmark-card benchmark-card-wide">
+      <label for="benchmarkDatasetPath" data-i18n="benchmarkDatasetPathLabel">dataset_path</label>
+      <input id="benchmarkDatasetPath" type="text" />
+    </div>
+
+    <div class="benchmark-card">
+      <label for="benchmarkTokenLengthsSelect" data-i18n="benchmarkTokenLengthsLabel">token lengths</label>
+      <div class="benchmark-add-row">
+        <input
+          id="benchmarkTokenLengthInput"
+          type="text"
+          data-i18n-placeholder="benchmarkTokenLengthPlaceholder"
+          placeholder="例如 none/1024"
+        />
+        <button id="benchmarkAddTokenLengthBtn" class="action secondary" data-i18n="btnAddTokenLength">新增</button>
+      </div>
+      <select id="benchmarkTokenLengthsSelect" multiple></select>
+    </div>
+
+    <div class="benchmark-card">
+      <label for="benchmarkConcurrencySelect" data-i18n="benchmarkConcurrencyLabel">concurrency</label>
+      <select id="benchmarkConcurrencySelect" multiple></select>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <button id="benchmarkReloadBtn" class="action secondary" data-i18n="btnReload">重新載入</button>
+    <button id="benchmarkSaveBtn" class="action" data-i18n="btnSaveBenchmarkConfig">儲存 Benchmark 設定</button>
+  </div>
+</section>

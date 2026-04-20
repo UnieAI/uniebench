@@ -1,0 +1,82 @@
+.benchmark-profile-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.benchmark-profile-row label {
+  font-size: 13px;
+  color: #334155;
+  font-weight: 700;
+}
+
+.benchmark-profile-row select,
+.benchmark-profile-row input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  min-height: 38px;
+  background: #fff;
+  font-size: 14px;
+}
+
+.benchmark-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.benchmark-card {
+  border: 1px solid #dbe3ee;
+  border-radius: 10px;
+  padding: 10px;
+  background: #f8fafc;
+}
+
+.benchmark-card-wide {
+  grid-column: 1 / -1;
+}
+
+.benchmark-card label {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+  margin-bottom: 6px;
+}
+
+.benchmark-card input,
+.benchmark-card select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  min-height: 38px;
+  background: #fff;
+  font-size: 14px;
+}
+
+.benchmark-card select[multiple] {
+  min-height: 120px;
+}
+
+.benchmark-add-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.benchmark-add-row input {
+  flex: 1;
+}
+
+@media (max-width: 900px) {
+  .benchmark-grid {
+    grid-template-columns: 1fr;
+  }
+  .benchmark-card-wide {
+    grid-column: auto;
+  }
+}
