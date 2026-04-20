@@ -75,8 +75,16 @@ function renderFloatingMonitor(data) {
   }
 
   const gpus = Array.isArray(data?.gpus) ? data.gpus : [];
+  const system = data?.system || {};
+  const cpuText = pct(system.cpu_percent) === null ? t("na") : `${pct(system.cpu_percent)}%`;
+  const ramText = pct(system.ram_percent) === null ? t("na") : `${pct(system.ram_percent)}%`;
+
   const header = `
     <div class="floating-monitor-title">${t("tabMonitor")}</div>
+    <div class="floating-monitor-system">
+      <span>${t("metricCpu")}: ${cpuText}</span>
+      <span>${t("metricRamPct")}: ${ramText}</span>
+    </div>
     <div class="floating-monitor-head">
       <span>ID</span>
       <span>${t("colUtil")}</span>
