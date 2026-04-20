@@ -24,7 +24,7 @@ from dashboard.backend.services.scripts_service import (
     resolve_script_path,
     set_script_enabled,
     set_script_metadata,
-    sync_default_config_server_entry,
+    sync_default_config_servers,
     sync_enabled_map,
     start_script_test,
     stop_script_test,
@@ -233,13 +233,10 @@ def update_script(script_path: str, payload: ScriptPayload) -> dict:
         )
         metadata = metadata_changed["metadata"]
 
-    sync_info = sync_default_config_server_entry(
+    sync_info = sync_default_config_servers(
+        script_dir=script_dir,
         config_path=CONFIG_PATH,
         lock=WRITE_LOCK,
-        group_name=normalized_path.split("/", 1)[0],
-        script_path=resolved_script_path,
-        script_name=resolved_script_path.name,
-        metadata=metadata,
     )
 
     return {
@@ -249,6 +246,6 @@ def update_script(script_path: str, payload: ScriptPayload) -> dict:
         "script_path": normalized_path,
         "path": str(resolved_script_path),
         "metadata": metadata,
-        "default_config_server": sync_info,
+        "default_config_server_sync": sync_info,
         "time": now_iso(),
     }

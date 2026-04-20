@@ -8,7 +8,7 @@ from dashboard.backend.routers.health import router as health_router
 from dashboard.backend.routers.scripts import router as scripts_router
 
 
-app = FastAPI(title="Benchmark Dashboard API", version="0.1.8")
+app = FastAPI(title="Benchmark Dashboard API", version="0.1.9")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
