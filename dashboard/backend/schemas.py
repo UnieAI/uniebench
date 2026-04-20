@@ -28,6 +28,10 @@ class ScriptTestStartPayload(BaseModel):
     endpoint_url: str
 
 
+class ScriptHostTestBuildPayload(BaseModel):
+    endpoint_url: str
+
+
 class ScriptEnabledPayload(BaseModel):
     enabled: bool
 

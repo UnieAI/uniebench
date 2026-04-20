@@ -17,6 +17,7 @@ let testStatusPollTimer = null;
 let testState = null;
 let lastEndpointUrl = "http://localhost:8000";
 let hostTestResultText = "";
+let hostTestCommand = "";
 
 function defaultScriptTemplate() {
   return "#!/bin/bash\nset -euo pipefail\n\n";
@@ -453,40 +454,9 @@ function hideHostTestPopup() {
   popup.classList.add("hidden");
 }
 
-function getHostScriptPathForCommand() {
-  if (!selectedScriptPath) return "";
-  return `./services/${selectedScriptPath}`;
-}
-
-function buildHostTestCommand(endpointUrl) {
-  const scriptPath = getHostScriptPathForCommand();
-  const safeScriptPath = scriptPath || "./services/default/default_script.sh";
-  const safeEndpoint = String(endpointUrl || lastEndpointUrl || "http://localhost:8000").trim() || "http://localhost:8000";
-  return [
-    "cd /workspace/jeff/Benchmark-Autotest",
-    `SCRIPT_PATH="${safeScriptPath}"`,
-    `ENDPOINT="${safeEndpoint}"`,
-    "LOG_FILE=\"/tmp/host_script_test_$(date +%Y%m%d_%H%M%S).log\"",
-    "bash \"$SCRIPT_PATH\" > \"$LOG_FILE\" 2>&1 &",
-    "PID=$!",
-    "echo \"PID=$PID\"",
-    "HEALTH_OK=0",
-    "for i in $(seq 1 60); do",
-    "  if curl -fsS \"$ENDPOINT/health\" >/dev/null; then",
-    "    HEALTH_OK=1",
-    "    break",
-    "  fi",
-    "  sleep 10",
-    "done",
-    "if [ \"$HEALTH_OK\" -eq 1 ]; then",
-    "  echo \"PASS: health check success\"",
-    "else",
-    "  echo \"FAIL: health check timeout\"",
-    "fi",
-    "kill \"$PID\" 2>/dev/null || true",
-    "wait \"$PID\" 2>/dev/null || true",
-    "echo \"log: $LOG_FILE\"",
-  ].join("\n");
+function buildFallbackHostCommand() {
+  const fallbackPath = "/workspace/jeff/Benchmark-Autotest/services/__test__/test.sh";
+  return `bash ${fallbackPath}`;
 }
 
 function renderHostTestPopup() {
@@ -497,7 +467,7 @@ function renderHostTestPopup() {
 
   const commandEl = document.getElementById("hostTestCommandOutput");
   if (commandEl) {
-    commandEl.textContent = buildHostTestCommand(endpointInput?.value || lastEndpointUrl);
+    commandEl.textContent = hostTestCommand || buildFallbackHostCommand();
   }
 
   const resultInput = document.getElementById("hostTestResultInput");
@@ -916,6 +886,7 @@ function openHostTestPopup() {
   }
   renderHostTestPopup();
   showHostTestPopup();
+  void buildHostTestScriptFile();
 }
 
 function closeHostTestPopup() {
@@ -928,6 +899,33 @@ function applyHostTestResult() {
   hostTestResultText = resultInput.value.trim();
   renderHostTestPopup();
   setStatus("scriptsStatus", t("statusHostTestResultSaved"), "ok");
+}
+
+async function buildHostTestScriptFile() {
+  if (!selectedScriptPath) return;
+  const endpointInput = getHostTestEndpointInput();
+  const endpointUrl = (endpointInput?.value || lastEndpointUrl || "").trim();
+  if (!endpointUrl) {
+    setStatus("scriptsStatus", t("statusScriptEndpointRequired"), "err");
+    return;
+  }
+  try {
+    const { ok, status, data } = await requestJson(`/api/scripts/${encodeScriptPath(selectedScriptPath)}/test/host-build`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint_url: endpointUrl }),
+    });
+    if (!ok) {
+      throw new Error(data.detail || status);
+    }
+    hostTestCommand = String(data.command || "").trim();
+    renderHostTestPopup();
+    setStatus("scriptsStatus", t("statusHostTestScriptReady"), "ok");
+  } catch (err) {
+    hostTestCommand = "";
+    renderHostTestPopup();
+    setStatus("scriptsStatus", t("statusHostTestScriptBuildFail", { reason: err }), "err");
+  }
 }
 
 async function startScriptTest() {
@@ -1088,6 +1086,7 @@ export function initScriptsFeature() {
   hostEndpointInput.value = lastEndpointUrl;
   hostEndpointInput.addEventListener("input", () => {
     lastEndpointUrl = hostEndpointInput.value;
+    hostTestCommand = "";
     renderHostTestPopup();
   });
 

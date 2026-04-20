@@ -4,11 +4,13 @@ from dashboard.backend.core.settings import CONFIG_PATH, SCRIPTS_DIR_CANDIDATES,
 from dashboard.backend.schemas import (
     ScriptCreatePayload,
     ScriptEnabledPayload,
+    ScriptHostTestBuildPayload,
     ScriptMovePayload,
     ScriptPayload,
     ScriptTestStartPayload,
 )
 from dashboard.backend.services.scripts_service import (
+    build_host_test_script,
     create_script_path,
     get_script_last_test_result,
     get_script_metadata,
@@ -92,6 +94,27 @@ def script_test_stop() -> dict:
     status["stopped"] = True
     status["time"] = now_iso()
     return status
+
+
+@router.post("/{script_path:path}/test/host-build")
+def script_test_host_build(script_path: str, payload: ScriptHostTestBuildPayload) -> dict:
+    script_dir = pick_scripts_dir(SCRIPTS_DIR_CANDIDATES, create=True)
+    try:
+        built = build_host_test_script(
+            script_dir=script_dir,
+            script_rel_path=script_path,
+            endpoint_url=payload.endpoint_url,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to build host test script: {exc}") from exc
+
+    built["built"] = True
+    built["time"] = now_iso()
+    return built
 
 
 @router.post("/move")
