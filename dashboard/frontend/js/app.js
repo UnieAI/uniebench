@@ -32,6 +32,12 @@ function getTabContentRoot() {
   return document.getElementById("tabContent");
 }
 
+function ensureMonitorPolling() {
+  if (monitorPollingStarted) return;
+  setInterval(refreshMonitor, 2000);
+  monitorPollingStarted = true;
+}
+
 async function loadTabPartial(tab) {
   const root = getTabContentRoot();
   if (!root) return;
@@ -57,13 +63,11 @@ async function activateTab(tab) {
   activeTab = tab;
   localStorage.setItem(LAST_TAB_KEY, tab);
   setMonitorFloatingMode(tab !== "gpu");
+  ensureMonitorPolling();
+  await refreshMonitor();
 
   if (tab === "gpu") {
     initMonitor();
-    if (!monitorPollingStarted) {
-      setInterval(refreshMonitor, 2000);
-      monitorPollingStarted = true;
-    }
     return;
   }
 
@@ -136,6 +140,7 @@ async function onLanguageChanged() {
 async function init() {
   initTestMetaFeature();
   await loadTestMeta();
+  ensureMonitorPolling();
   await activateTab(detectInitialTab());
   initLanguageSelector("langSelect", onLanguageChanged);
   initTabs({ onTabSelected: activateTab });
