@@ -122,6 +122,12 @@ th { background: #ecfeff; }
   backdrop-filter: blur(2px);
 }
 
+.floating-monitor.collapsed {
+  width: fit-content;
+  max-width: calc(100vw - 24px);
+  padding-right: 8px;
+}
+
 .floating-monitor.hidden {
   display: none;
 }

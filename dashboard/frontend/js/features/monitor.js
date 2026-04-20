@@ -72,6 +72,7 @@ function renderFloatingMonitor(data) {
 
   if (!floatingEnabled) {
     root.classList.add("hidden");
+    root.classList.remove("collapsed");
     root.innerHTML = "";
     return;
   }
@@ -102,6 +103,7 @@ function renderFloatingMonitor(data) {
 
   if (!data || !data.available || gpus.length === 0) {
     root.classList.remove("hidden");
+    root.classList.toggle("collapsed", floatingCollapsed);
     root.innerHTML = `${titleRow}${floatingCollapsed ? "" : `<div class="floating-monitor-empty">${t("rowNoData")}</div>`}`;
     const toggleBtn = document.getElementById("floatingMonitorToggleBtn");
     if (toggleBtn) {
@@ -115,6 +117,7 @@ function renderFloatingMonitor(data) {
 
   if (floatingCollapsed) {
     root.classList.remove("hidden");
+    root.classList.add("collapsed");
     root.innerHTML = titleRow;
     const toggleBtn = document.getElementById("floatingMonitorToggleBtn");
     if (toggleBtn) {
@@ -139,6 +142,7 @@ function renderFloatingMonitor(data) {
   }).join("");
 
   root.classList.remove("hidden");
+  root.classList.remove("collapsed");
   root.innerHTML = titleRow + bodyHeader + rows;
   const toggleBtn = document.getElementById("floatingMonitorToggleBtn");
   if (toggleBtn) {
@@ -185,6 +189,7 @@ export function setMonitorFloatingMode(enableFloating) {
     const root = document.getElementById("floatingMonitor");
     if (root) {
       root.classList.add("hidden");
+      root.classList.remove("collapsed");
       root.innerHTML = "";
     }
   }
