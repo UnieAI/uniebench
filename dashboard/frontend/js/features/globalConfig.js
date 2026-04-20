@@ -3,6 +3,8 @@ import { t } from "../core/i18n.js";
 import { escapeHtml, setStatus } from "../core/ui.js";
 
 let modelNames = [];
+let globalSaveTimer = null;
+let suppressAutoSave = false;
 
 function normalizeModelNames(values) {
   if (!Array.isArray(values)) return [];
@@ -52,6 +54,7 @@ function onAddModelName() {
   modelNames = normalizeModelNames([...modelNames, name]);
   input.value = "";
   renderModelNameList();
+  scheduleGlobalConfigSave();
 }
 
 function onModelListClick(event) {
@@ -61,6 +64,7 @@ function onModelListClick(event) {
   const name = target.dataset.name || "";
   modelNames = modelNames.filter((item) => item !== name);
   renderModelNameList();
+  scheduleGlobalConfigSave();
 }
 
 export async function discoverGlobalModelNames() {
@@ -74,6 +78,7 @@ export async function discoverGlobalModelNames() {
     modelNames = normalizeModelNames(data.model_names || []);
     renderModelNameList();
     setStatus("globalConfigStatus", t("statusGlobalConfigDiscovered", { count: modelNames.length, path: data.model_path || modelPath }), "ok");
+    await saveGlobalConfig();
   } catch (err) {
     setStatus("globalConfigStatus", t("statusGlobalConfigDiscoverFail", { reason: err }), "err");
   }
@@ -88,15 +93,15 @@ export async function loadGlobalConfig() {
     if (!ok) {
       throw new Error(data.detail || status);
     }
+    suppressAutoSave = true;
     setValue("globalModelPath", data.model_path || "");
     setValue("globalDefaultBaseUrl", data.default_base_url || "");
-    setValue("globalCudaVersion", data.cuda_version || "");
-    setValue("globalCpuModel", data.cpu_model || "");
-    setValue("globalGpuModel", data.gpu_model || "");
     modelNames = normalizeModelNames(data.model_names || []);
     renderModelNameList();
+    suppressAutoSave = false;
     setStatus("globalConfigStatus", t("statusGlobalConfigLoaded", { time: data.time }), "ok");
   } catch (err) {
+    suppressAutoSave = false;
     setStatus("globalConfigStatus", t("statusGlobalConfigLoadFail", { reason: err }), "err");
   }
 }
@@ -124,19 +129,32 @@ export async function saveGlobalConfig() {
   }
 }
 
+function scheduleGlobalConfigSave() {
+  if (suppressAutoSave) return;
+  if (globalSaveTimer !== null) {
+    window.clearTimeout(globalSaveTimer);
+  }
+  globalSaveTimer = window.setTimeout(() => {
+    globalSaveTimer = null;
+    void saveGlobalConfig();
+  }, 350);
+}
+
 export function initGlobalConfigFeature() {
   const loadBtn = document.getElementById("loadGlobalConfig");
-  const saveBtn = document.getElementById("saveGlobalConfig");
   const discoverBtn = document.getElementById("discoverGlobalModelNames");
   const addBtn = document.getElementById("addGlobalModelName");
   const modelInput = document.getElementById("globalModelNameInput");
+  const modelPathInput = document.getElementById("globalModelPath");
+  const defaultBaseUrlInput = document.getElementById("globalDefaultBaseUrl");
   const list = document.getElementById("globalModelNameList");
-  if (!loadBtn || !saveBtn || !discoverBtn || !addBtn || !modelInput || !list) return;
+  if (!loadBtn || !discoverBtn || !addBtn || !modelInput || !modelPathInput || !defaultBaseUrlInput || !list) return;
 
   loadBtn.addEventListener("click", loadGlobalConfig);
-  saveBtn.addEventListener("click", saveGlobalConfig);
   discoverBtn.addEventListener("click", discoverGlobalModelNames);
   addBtn.addEventListener("click", onAddModelName);
+  modelPathInput.addEventListener("input", scheduleGlobalConfigSave);
+  defaultBaseUrlInput.addEventListener("input", scheduleGlobalConfigSave);
   modelInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();

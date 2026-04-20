@@ -59,3 +59,9 @@ class BenchmarkConfigPayload(BaseModel):
 class RuntimeTargetPayload(BaseModel):
     server_id: str | None = None
     benchmark_id: str | None = None
+
+
+class TestMetaPayload(BaseModel):
+    test_name: str | None = None
+    sheet_name: str | None = None
+    platform_name: str | None = None

@@ -65,6 +65,34 @@ body {
   min-height: 38px;
 }
 
+.meta-toolbar {
+  display: grid;
+  grid-template-columns: auto minmax(160px, 1fr) auto minmax(160px, 1fr) auto minmax(180px, 1fr);
+  gap: 8px;
+  align-items: center;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+
+.meta-toolbar label {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.meta-toolbar input,
+.meta-toolbar select {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 14px;
+  min-height: 38px;
+  background: #fff;
+}
+
 .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
 
 .tab-btn {
@@ -81,6 +109,18 @@ body {
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
   color: #fff;
   border-color: transparent;
+}
+
+.ready-tab-btn {
+  margin-left: auto;
+  background: #16a34a;
+  color: #fff;
+  border-color: #15803d;
+}
+
+.ready-tab-btn.active {
+  background: linear-gradient(135deg, #16a34a, #22c55e);
+  color: #fff;
 }
 
 .panel {
@@ -142,4 +182,7 @@ textarea {
   .title { font-size: 24px; }
   textarea { min-height: 360px; }
   .toolbar { flex-direction: column; align-items: stretch; }
+  .meta-toolbar {
+    grid-template-columns: 1fr;
+  }
 }

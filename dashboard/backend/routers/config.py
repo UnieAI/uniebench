@@ -1,11 +1,13 @@
 from fastapi import APIRouter, HTTPException
 
-from dashboard.backend.core.settings import CONFIG_PATH, WRITE_LOCK, now_iso
-from dashboard.backend.schemas import ConfigPayload, RuntimeTargetPayload
+from dashboard.backend.core.settings import CONFIG_PATH, PROJECT_ROOT, WRITE_LOCK, now_iso
+from dashboard.backend.schemas import ConfigPayload, RuntimeTargetPayload, TestMetaPayload
 from dashboard.backend.services.config_service import (
     get_runtime_target,
+    get_test_meta,
     read_config,
     save_config,
+    update_test_meta,
     update_runtime_target,
     validate_config_yaml,
 )
@@ -67,6 +69,32 @@ def write_runtime_target(payload: RuntimeTargetPayload) -> dict:
         server_id=payload.server_id,
         benchmark_id=payload.benchmark_id,
     )
+    data["saved"] = True
+    data["time"] = now_iso()
+    return data
+
+
+@router.get("/test-meta")
+def read_test_meta() -> dict:
+    if not CONFIG_PATH.exists():
+        raise HTTPException(status_code=404, detail=f"Config file not found: {CONFIG_PATH}")
+    data = get_test_meta(CONFIG_PATH, PROJECT_ROOT / "sheet_id_list.json")
+    data["time"] = now_iso()
+    return data
+
+
+@router.put("/test-meta")
+def write_test_meta(payload: TestMetaPayload) -> dict:
+    if not CONFIG_PATH.exists():
+        raise HTTPException(status_code=404, detail=f"Config file not found: {CONFIG_PATH}")
+    update_test_meta(
+        config_path=CONFIG_PATH,
+        lock=WRITE_LOCK,
+        test_name=payload.test_name,
+        sheet_name=payload.sheet_name,
+        platform_name=payload.platform_name,
+    )
+    data = get_test_meta(CONFIG_PATH, PROJECT_ROOT / "sheet_id_list.json")
     data["saved"] = True
     data["time"] = now_iso()
     return data

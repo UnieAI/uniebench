@@ -5,6 +5,7 @@ import { initMonitor, refreshMonitor } from "./features/monitor.js";
 import { initConfigEditor, loadConfig } from "./features/configEditor.js";
 import { initGlobalConfigFeature, loadGlobalConfig } from "./features/globalConfig.js";
 import { initScriptsFeature, refreshScripts, rerenderScriptsUi } from "./features/scripts.js";
+import { initTestMetaFeature, loadTestMeta } from "./features/testMeta.js";
 
 const TAB_PARTIALS = {
   gpu: "./partials/tab-monitor.html",
@@ -12,6 +13,7 @@ const TAB_PARTIALS = {
   scripts: "./partials/tab-scripts.html",
   globalConfig: "./partials/tab-global-config.html",
   benchmarkConfig: "./partials/tab-benchmark.html",
+  readyToRun: "./partials/tab-ready.html",
 };
 
 let activeTab = "gpu";
@@ -72,6 +74,7 @@ async function activateTab(tab) {
   if (tab === "benchmarkConfig") {
     initBenchmarkConfigFeature();
     await loadBenchmarkConfig();
+    return;
   }
 }
 
@@ -108,6 +111,8 @@ async function onLanguageChanged() {
 }
 
 async function init() {
+  initTestMetaFeature();
+  await loadTestMeta();
   await activateTab(detectInitialTab());
   initLanguageSelector("langSelect", onLanguageChanged);
   initTabs({ onTabSelected: activateTab });
