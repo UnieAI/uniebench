@@ -9,6 +9,8 @@ let selectedScriptPath = "";
 let selectedScriptName = "";
 let selectedScriptGroup = "default";
 let scriptsDir = "";
+let selectedScriptMeta = { tp_size: "", model_name: "", model_id: "", base_url: "", port: "" };
+let scriptModelNameOptions = [];
 
 let testStatusPollTimer = null;
 let testState = null;
@@ -20,7 +22,7 @@ function defaultScriptTemplate() {
 
 function detectDefaultPortFromScriptContent(content) {
   const text = String(content || "");
-  const re = /--port\s+(\d+)/g;
+  const re = /--port(?:\s+|=)(\d+)/g;
   let match;
   let port = "8000";
   while (true) {
@@ -46,6 +48,129 @@ function encodeScriptPath(path) {
     .split("/")
     .map((seg) => encodeURIComponent(seg))
     .join("/");
+}
+
+function normalizeScriptMeta(raw) {
+  const data = raw && typeof raw === "object" ? raw : {};
+  return {
+    tp_size: String(data.tp_size || "").trim(),
+    model_name: String(data.model_name || "").trim(),
+    model_id: String(data.model_id || "").trim(),
+    base_url: String(data.base_url || "").trim(),
+    port: String(data.port || "").trim(),
+  };
+}
+
+function getMetaInput(id) {
+  const el = document.getElementById(id);
+  return el instanceof HTMLInputElement ? el : null;
+}
+
+function renderScriptMetaForm() {
+  const tpEl = getMetaInput("scriptMetaTpSize");
+  const modelNameEl = getMetaInput("scriptMetaModelName");
+  const modelIdEl = getMetaInput("scriptMetaModelId");
+  const baseUrlEl = getMetaInput("scriptMetaBaseUrl");
+  const portEl = getMetaInput("scriptMetaPort");
+  if (!tpEl || !modelNameEl || !modelIdEl || !baseUrlEl || !portEl) return;
+
+  const meta = normalizeScriptMeta(selectedScriptMeta);
+  tpEl.value = meta.tp_size;
+  modelNameEl.value = meta.model_name;
+  modelIdEl.value = meta.model_id;
+  baseUrlEl.value = meta.base_url;
+  portEl.value = meta.port;
+}
+
+function collectScriptMetaForm() {
+  return normalizeScriptMeta({
+    tp_size: getMetaInput("scriptMetaTpSize")?.value,
+    model_name: getMetaInput("scriptMetaModelName")?.value,
+    model_id: getMetaInput("scriptMetaModelId")?.value,
+    base_url: getMetaInput("scriptMetaBaseUrl")?.value,
+    port: getMetaInput("scriptMetaPort")?.value,
+  });
+}
+
+function getScriptEditorContent() {
+  const editor = document.getElementById("scriptEditor");
+  if (!(editor instanceof HTMLTextAreaElement)) return "";
+  return editor.value || "";
+}
+
+function stripWrappedQuotes(token) {
+  const text = String(token || "").trim();
+  if (!text) return "";
+  if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+    return text.slice(1, -1).trim();
+  }
+  return text;
+}
+
+function findLastMatchGroup(text, regex, groupIndex = 1) {
+  let match;
+  let value = "";
+  while (true) {
+    match = regex.exec(text);
+    if (!match) break;
+    value = String(match[groupIndex] || "");
+  }
+  return stripWrappedQuotes(value);
+}
+
+function extractServeTarget(scriptContent) {
+  const text = String(scriptContent || "");
+  const target = findLastMatchGroup(text, /\bserve\s+("[^"]+"|'[^']+'|[^\s|&;]+)/g, 1);
+  return stripWrappedQuotes(target);
+}
+
+function extractModelNameFromServeTarget(serveTarget) {
+  const clean = String(serveTarget || "").trim().replace(/\/+$/, "");
+  if (!clean) return "";
+  const parts = clean.split("/").filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+  }
+  return parts[0] || clean;
+}
+
+function detectMetaFromScriptContent(scriptContent) {
+  const text = String(scriptContent || "");
+  const serveTarget = extractServeTarget(text);
+  const servedModelName = findLastMatchGroup(text, /--served-model-name(?:\s+|=)("[^"]+"|'[^']+'|[^\s|&;]+)/g, 1);
+  const tpSize = findLastMatchGroup(text, /--(?:tp-size|tp)(?:\s+|=)([^\s|&;]+)/g, 1);
+  const port = detectDefaultPortFromScriptContent(text);
+
+  return {
+    tp_size: tpSize || "",
+    model_name: extractModelNameFromServeTarget(serveTarget),
+    model_id: servedModelName || serveTarget,
+    base_url: "http://localhost",
+    port: port || "8000",
+  };
+}
+
+function renderScriptModelNameOptions() {
+  const datalist = document.getElementById("scriptModelNameOptions");
+  if (!(datalist instanceof HTMLDataListElement)) return;
+  datalist.innerHTML = scriptModelNameOptions
+    .map((name) => `<option value="${escapeHtml(name)}"></option>`)
+    .join("");
+}
+
+async function refreshScriptModelNameOptions() {
+  try {
+    const { ok, status, data } = await requestJson("/api/global-config");
+    if (!ok) {
+      throw new Error(data.detail || status);
+    }
+    scriptModelNameOptions = Array.isArray(data.model_names)
+      ? data.model_names.map((v) => String(v || "").trim()).filter((v) => v.length > 0)
+      : [];
+  } catch {
+    scriptModelNameOptions = [];
+  }
+  renderScriptModelNameOptions();
 }
 
 function normalizeLastTest(raw) {
@@ -176,6 +301,27 @@ function updateScriptEditorHint() {
   } else {
     hint.textContent = t("scriptEditorHint");
   }
+}
+
+function onAutoDetectClick(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLButtonElement)) return;
+  if (!target.classList.contains("script-auto-detect-btn")) return;
+  const field = String(target.dataset.field || "");
+  const detected = detectMetaFromScriptContent(getScriptEditorContent());
+  const current = collectScriptMetaForm();
+  const next = { ...current };
+
+  if (field === "tp_size") next.tp_size = detected.tp_size;
+  else if (field === "model_name") next.model_name = detected.model_name;
+  else if (field === "model_id") next.model_id = detected.model_id;
+  else if (field === "base_url") next.base_url = detected.base_url;
+  else if (field === "port") next.port = detected.port;
+  else return;
+
+  selectedScriptMeta = normalizeScriptMeta(next);
+  renderScriptMetaForm();
+  setStatus("scriptsStatus", t("statusScriptAutoDetectApplied", { field }), "ok");
 }
 
 function renderScriptList() {
@@ -429,6 +575,7 @@ async function loadScript(path, showStatus = true) {
     selectedScriptPath = data.script_path || path;
     selectedScriptName = data.name || selectedScriptPath.split("/").pop() || "";
     selectedScriptGroup = data.group || selectedScriptPath.split("/")[0] || "default";
+    selectedScriptMeta = normalizeScriptMeta(data.metadata);
 
     const editor = document.getElementById("scriptEditor");
     if (!editor) return;
@@ -437,6 +584,8 @@ async function loadScript(path, showStatus = true) {
 
     renderScriptList();
     renderGroupSelectors();
+    renderScriptMetaForm();
+    renderScriptModelNameOptions();
     updateScriptEditorHint();
     renderTestPopup();
 
@@ -479,6 +628,8 @@ export async function refreshScripts(preferPath = selectedScriptPath) {
       editor.value = defaultScriptTemplate();
       selectedScriptName = "";
       selectedScriptGroup = "default";
+      selectedScriptMeta = normalizeScriptMeta({});
+      renderScriptMetaForm();
       updateScriptEditorHint();
     }
 
@@ -567,17 +718,20 @@ async function saveScript() {
     const editor = document.getElementById("scriptEditor");
     if (!editor) return;
     const content = editor.value;
+    selectedScriptMeta = collectScriptMetaForm();
 
     const { ok, status, data } = await requestJson(`/api/scripts/${encodeScriptPath(selectedScriptPath)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, metadata: selectedScriptMeta }),
     });
     if (!ok) {
       throw new Error(data.detail || status);
     }
 
     setStatus("scriptsStatus", t("statusScriptSaved", { name: data.name || selectedScriptName || selectedScriptPath }), "ok");
+    selectedScriptMeta = normalizeScriptMeta(data.metadata || selectedScriptMeta);
+    renderScriptMetaForm();
     applyDefaultEndpointFromScriptContent(content);
     await refreshScripts(data.script_path || selectedScriptPath);
   } catch (err) {
@@ -739,13 +893,16 @@ export function rerenderScriptsUi() {
   renderScriptDirHint();
   renderScriptList();
   renderGroupSelectors();
+  renderScriptMetaForm();
+  renderScriptModelNameOptions();
   updateScriptEditorHint();
   renderTestPopup();
 }
 
 export function initScriptsFeature() {
+  const scriptsPanel = document.getElementById("scripts");
   const listEl = document.getElementById("scriptList");
-  if (!listEl) return;
+  if (!scriptsPanel || !listEl) return;
 
   const refreshBtn = document.getElementById("refreshScriptsBtn");
   const createBtn = document.getElementById("createScriptBtn");
@@ -769,6 +926,7 @@ export function initScriptsFeature() {
 
   listEl.addEventListener("click", onScriptListClick);
   listEl.addEventListener("change", onScriptListToggleChange);
+  scriptsPanel.addEventListener("click", onAutoDetectClick);
 
   refreshBtn.addEventListener("click", () => refreshScripts(selectedScriptPath));
   createBtn.addEventListener("click", createScript);
@@ -788,5 +946,7 @@ export function initScriptsFeature() {
   });
 
   renderTestPopup();
+  renderScriptMetaForm();
+  void refreshScriptModelNameOptions();
   fetchTestStatus(true, true);
 }

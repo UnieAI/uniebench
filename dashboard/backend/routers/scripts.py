@@ -11,16 +11,19 @@ from dashboard.backend.schemas import (
 from dashboard.backend.services.scripts_service import (
     create_script_path,
     get_script_last_test_result,
+    get_script_metadata,
     get_script_enabled,
     get_script_test_status,
     list_scripts,
     move_script_enabled_state,
+    move_script_metadata,
     move_script_path,
     move_script_test_result,
     pick_scripts_dir,
     read_script,
     resolve_script_path,
     set_script_enabled,
+    set_script_metadata,
     sync_enabled_map,
     start_script_test,
     stop_script_test,
@@ -47,6 +50,7 @@ def get_scripts() -> dict:
             "path": path,
             "group": group,
             "enabled": bool(enabled_map.get(path, False)),
+            "metadata": get_script_metadata(path, CONFIG_PATH),
             "last_test": get_script_last_test_result(path),
         }
         scripts.append(item)
@@ -106,6 +110,7 @@ def script_move(payload: ScriptMovePayload) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     move_script_enabled_state(source_rel, target_rel, CONFIG_PATH, WRITE_LOCK)
+    move_script_metadata(source_rel, target_rel, CONFIG_PATH, WRITE_LOCK)
     move_script_test_result(source_rel, target_rel)
     return {
         "moved": True,
@@ -177,6 +182,7 @@ def get_script(script_path: str) -> dict:
         "script_path": normalized_path,
         "path": str(resolved_script_path),
         "enabled": get_script_enabled(normalized_path, CONFIG_PATH),
+        "metadata": get_script_metadata(normalized_path, CONFIG_PATH),
         "content": read_script(resolved_script_path),
         "time": now_iso(),
     }
@@ -216,6 +222,15 @@ def update_script(script_path: str, payload: ScriptPayload) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     write_script(resolved_script_path, payload.content, WRITE_LOCK)
+    metadata = get_script_metadata(normalized_path, CONFIG_PATH)
+    if payload.metadata is not None:
+        metadata_changed = set_script_metadata(
+            normalized_path,
+            payload.metadata.model_dump(),
+            CONFIG_PATH,
+            WRITE_LOCK,
+        )
+        metadata = metadata_changed["metadata"]
 
     return {
         "saved": True,
@@ -223,5 +238,6 @@ def update_script(script_path: str, payload: ScriptPayload) -> dict:
         "group": normalized_path.split("/", 1)[0],
         "script_path": normalized_path,
         "path": str(resolved_script_path),
+        "metadata": metadata,
         "time": now_iso(),
     }

@@ -7,6 +7,8 @@ services:
     working_dir: /workspace/jeff/Benchmark-Autotest
     volumes:
       - ./:/workspace/jeff/Benchmark-Autotest
+      - ${HOME}:/home/ubuntu
+      - /workspace:/workspace
     environment:
       PROJECT_ROOT: /workspace/jeff/Benchmark-Autotest
       SCRIPT_DIR: /workspace/jeff/Benchmark-Autotest/services
@@ -25,4 +27,7 @@ services:
       - dashboard-api
     ports:
       - "2147:2147"
+    volumes:
+      - ${HOME}:/home/ubuntu
+      - /workspace:/workspace
     restart: unless-stopped

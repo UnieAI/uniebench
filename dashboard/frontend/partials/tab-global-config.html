@@ -1,0 +1,51 @@
+<section id="globalConfig" class="panel active">
+  <div id="globalConfigStatus" class="status" data-i18n="globalConfigNotLoaded">尚未載入全域設定</div>
+  <div class="btn-row">
+    <button id="loadGlobalConfig" class="action secondary" data-i18n="btnReload">重新載入</button>
+    <button id="saveGlobalConfig" class="action" data-i18n="btnSaveGlobalConfig">儲存全域設定</button>
+  </div>
+
+  <div class="global-grid">
+    <div class="global-card">
+      <label for="globalModelPath" data-i18n="globalModelPathLabel">model_path</label>
+      <input id="globalModelPath" type="text" />
+    </div>
+
+    <div class="global-card">
+      <label for="globalDefaultBaseUrl" data-i18n="globalDefaultBaseUrlLabel">default_base_url</label>
+      <input id="globalDefaultBaseUrl" type="text" placeholder="http://localhost" />
+    </div>
+
+    <div class="global-card">
+      <div class="global-model-title-row">
+        <label data-i18n="globalModelNamesLabel">model_name 可選列表</label>
+        <button id="discoverGlobalModelNames" class="action secondary" data-i18n="btnDiscoverModelNames">自動讀取</button>
+      </div>
+      <div class="global-model-row">
+        <input
+          id="globalModelNameInput"
+          type="text"
+          data-i18n-placeholder="globalModelNamePlaceholder"
+          placeholder="輸入 model_name"
+        />
+        <button id="addGlobalModelName" class="action secondary" data-i18n="btnAddModelName">新增</button>
+      </div>
+      <div id="globalModelNameList" class="global-model-list"></div>
+    </div>
+
+    <div class="global-card">
+      <label for="globalCudaVersion" data-i18n="globalCudaVersionLabel">cuda_version</label>
+      <input id="globalCudaVersion" type="text" readonly />
+    </div>
+
+    <div class="global-card">
+      <label for="globalCpuModel" data-i18n="globalCpuModelLabel">cpu_model</label>
+      <input id="globalCpuModel" type="text" readonly />
+    </div>
+
+    <div class="global-card">
+      <label for="globalGpuModel" data-i18n="globalGpuModelLabel">gpu_model</label>
+      <input id="globalGpuModel" type="text" readonly />
+    </div>
+  </div>
+</section>

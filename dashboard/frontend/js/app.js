@@ -2,12 +2,14 @@ import { initTabs } from "./core/tabs.js";
 import { applyI18n, initLanguageSelector } from "./core/i18n.js";
 import { initMonitor, refreshMonitor } from "./features/monitor.js";
 import { initConfigEditor, loadConfig } from "./features/configEditor.js";
+import { initGlobalConfigFeature, loadGlobalConfig } from "./features/globalConfig.js";
 import { initScriptsFeature, refreshScripts, rerenderScriptsUi } from "./features/scripts.js";
 
 const TAB_PARTIALS = {
   gpu: "./partials/tab-monitor.html",
   config: "./partials/tab-config.html",
   scripts: "./partials/tab-scripts.html",
+  globalConfig: "./partials/tab-global-config.html",
 };
 
 let activeTab = "gpu";
@@ -56,6 +58,12 @@ async function activateTab(tab) {
     initScriptsFeature();
     rerenderScriptsUi();
     await refreshScripts();
+    return;
+  }
+
+  if (tab === "globalConfig") {
+    initGlobalConfigFeature();
+    await loadGlobalConfig();
   }
 }
 
@@ -78,6 +86,11 @@ async function onLanguageChanged() {
   if (activeTab === "scripts") {
     rerenderScriptsUi();
     await refreshScripts();
+    return;
+  }
+
+  if (activeTab === "globalConfig") {
+    await loadGlobalConfig();
   }
 }
 

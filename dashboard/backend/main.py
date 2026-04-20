@@ -3,11 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from dashboard.backend.routers.config import router as config_router
 from dashboard.backend.routers.gpu import router as gpu_router
+from dashboard.backend.routers.global_config import router as global_config_router
 from dashboard.backend.routers.health import router as health_router
 from dashboard.backend.routers.scripts import router as scripts_router
 
 
-app = FastAPI(title="Benchmark Dashboard API", version="0.1.0")
+app = FastAPI(title="Benchmark Dashboard API", version="0.1.6")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,3 +21,4 @@ app.include_router(health_router)
 app.include_router(gpu_router)
 app.include_router(config_router)
 app.include_router(scripts_router)
+app.include_router(global_config_router)
