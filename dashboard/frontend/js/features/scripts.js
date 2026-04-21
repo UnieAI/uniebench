@@ -3,6 +3,7 @@ import { t } from "../core/i18n.js";
 import { escapeHtml, setStatus } from "../core/ui.js";
 
 const TEST_STATUS_POLL_MS = 1500;
+const SCRIPT_AUTOSAVE_MS = 800;
 
 let scriptListData = [];
 let selectedScriptPath = "";
@@ -19,6 +20,8 @@ let lastEndpointUrl = "http://localhost:8000";
 let hostTestResultText = "";
 let hostTestCommand = "";
 let hostTestDecodedResult = null;
+let scriptAutoSaveTimer = null;
+let isScriptSaving = false;
 
 function defaultScriptTemplate() {
   return "#!/bin/bash\nset -euo pipefail\n\n";
@@ -402,6 +405,18 @@ function autoDetectAllScriptMeta() {
   selectedScriptMeta = normalizeScriptMeta(detected);
   renderScriptMetaForm();
   setStatus("scriptsStatus", t("statusScriptAutoDetectAppliedAll"), "ok");
+  scheduleScriptAutoSave();
+}
+
+function scheduleScriptAutoSave() {
+  if (!selectedScriptPath) return;
+  if (scriptAutoSaveTimer !== null) {
+    window.clearTimeout(scriptAutoSaveTimer);
+  }
+  scriptAutoSaveTimer = window.setTimeout(() => {
+    scriptAutoSaveTimer = null;
+    void saveScript({ quiet: true, refreshAfter: false });
+  }, SCRIPT_AUTOSAVE_MS);
 }
 
 function renderScriptList() {
@@ -900,11 +915,15 @@ async function moveScript() {
   }
 }
 
-async function saveScript() {
+async function saveScript({ quiet = false, refreshAfter = true } = {}) {
   if (!selectedScriptPath) {
-    setStatus("scriptsStatus", t("statusScriptNeedSelect"), "err");
+    if (!quiet) {
+      setStatus("scriptsStatus", t("statusScriptNeedSelect"), "err");
+    }
     return;
   }
+  if (isScriptSaving) return;
+  isScriptSaving = true;
 
   try {
     const editor = document.getElementById("scriptEditor");
@@ -921,13 +940,21 @@ async function saveScript() {
       throw new Error(data.detail || status);
     }
 
-    setStatus("scriptsStatus", t("statusScriptSaved", { name: data.name || selectedScriptName || selectedScriptPath }), "ok");
+    if (!quiet) {
+      setStatus("scriptsStatus", t("statusScriptSaved", { name: data.name || selectedScriptName || selectedScriptPath }), "ok");
+    }
     selectedScriptMeta = normalizeScriptMeta(data.metadata || selectedScriptMeta);
     renderScriptMetaForm();
     applyDefaultEndpointFromScriptContent(content);
-    await refreshScripts(data.script_path || selectedScriptPath);
+    if (refreshAfter) {
+      await refreshScripts(data.script_path || selectedScriptPath);
+    }
   } catch (err) {
-    setStatus("scriptsStatus", t("statusScriptSaveFail", { reason: err }), "err");
+    if (!quiet) {
+      setStatus("scriptsStatus", t("statusScriptSaveFail", { reason: err }), "err");
+    }
+  } finally {
+    isScriptSaving = false;
   }
 }
 
@@ -1208,7 +1235,6 @@ export function initScriptsFeature() {
   const moveBtn = document.getElementById("confirmMoveScriptBtn");
   const cancelCreateBtn = document.getElementById("cancelCreateScriptBtn");
   const cancelMoveBtn = document.getElementById("cancelMoveScriptBtn");
-  const saveBtn = document.getElementById("saveScriptBtn");
   const testBtn = document.getElementById("testScriptBtn");
   const testInHostBtn = document.getElementById("testInHostBtn");
   const autoDetectBtn = document.getElementById("autoDetectScriptMetaBtn");
@@ -1221,8 +1247,14 @@ export function initScriptsFeature() {
   const endpointInput = getPopupEndpointInput();
   const newScriptInput = document.getElementById("newScriptName");
   const runtimeServerSelect = document.getElementById("runtimeServerGroupSelect");
+  const scriptEditor = document.getElementById("scriptEditor");
+  const scriptMetaTpSize = getMetaInput("scriptMetaTpSize");
+  const scriptMetaModelName = getMetaInput("scriptMetaModelName");
+  const scriptMetaModelId = getMetaInput("scriptMetaModelId");
+  const scriptMetaBaseUrl = getMetaInput("scriptMetaBaseUrl");
+  const scriptMetaPort = getMetaInput("scriptMetaPort");
 
-  if (!refreshBtn || !openCreateBtn || !openMoveBtn || !createBtn || !moveBtn || !cancelCreateBtn || !cancelMoveBtn || !saveBtn || !testBtn || !testInHostBtn || !autoDetectBtn || !popupStartBtn || !popupStopBtn || !closePopupBtn || !closeHostPopupBtn || !hostEndpointInput || !hostApplyResultBtn || !endpointInput || !newScriptInput || !runtimeServerSelect) {
+  if (!refreshBtn || !openCreateBtn || !openMoveBtn || !createBtn || !moveBtn || !cancelCreateBtn || !cancelMoveBtn || !testBtn || !testInHostBtn || !autoDetectBtn || !popupStartBtn || !popupStopBtn || !closePopupBtn || !closeHostPopupBtn || !hostEndpointInput || !hostApplyResultBtn || !endpointInput || !newScriptInput || !runtimeServerSelect || !(scriptEditor instanceof HTMLTextAreaElement) || !scriptMetaTpSize || !scriptMetaModelName || !scriptMetaModelId || !scriptMetaBaseUrl || !scriptMetaPort) {
     return;
   }
 
@@ -1248,10 +1280,15 @@ export function initScriptsFeature() {
   moveBtn.addEventListener("click", moveScript);
   cancelCreateBtn.addEventListener("click", hideCreateScriptPopup);
   cancelMoveBtn.addEventListener("click", hideMoveScriptPopup);
-  saveBtn.addEventListener("click", saveScript);
   testBtn.addEventListener("click", openTestPopup);
   testInHostBtn.addEventListener("click", openHostTestPopup);
   autoDetectBtn.addEventListener("click", autoDetectAllScriptMeta);
+  scriptEditor.addEventListener("input", scheduleScriptAutoSave);
+  scriptMetaTpSize.addEventListener("input", scheduleScriptAutoSave);
+  scriptMetaModelName.addEventListener("input", scheduleScriptAutoSave);
+  scriptMetaModelId.addEventListener("input", scheduleScriptAutoSave);
+  scriptMetaBaseUrl.addEventListener("input", scheduleScriptAutoSave);
+  scriptMetaPort.addEventListener("input", scheduleScriptAutoSave);
 
   popupStartBtn.addEventListener("click", startScriptTest);
   popupStopBtn.addEventListener("click", () => stopScriptTest({ silent: false }));

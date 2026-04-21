@@ -11,6 +11,7 @@ const DEFAULT_PROFILE = {
   token_lengths: ["none/1024"],
   concurrency: [1, 16, 32, 64, 128, 256, 512],
 };
+const BENCHMARK_AUTOSAVE_MS = 700;
 
 let profiles = [];
 let selectedProfileId = "default";
@@ -18,6 +19,8 @@ let runtimeBenchmarkProfileId = "";
 let nameOptions = ["inferencemax-h100"];
 let tokenLengthOptions = ["none/1024"];
 let concurrencyOptions = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
+let benchmarkAutoSaveTimer = null;
+let isBenchmarkSaving = false;
 
 function normalizeProfile(raw) {
   if (!raw || typeof raw !== "object") return { ...DEFAULT_PROFILE };
@@ -167,6 +170,16 @@ function rerenderAll() {
   renderProfileForm();
 }
 
+function scheduleBenchmarkAutoSave() {
+  if (benchmarkAutoSaveTimer !== null) {
+    window.clearTimeout(benchmarkAutoSaveTimer);
+  }
+  benchmarkAutoSaveTimer = window.setTimeout(() => {
+    benchmarkAutoSaveTimer = null;
+    void saveBenchmarkConfig({ quiet: true, rerenderAfter: false });
+  }, BENCHMARK_AUTOSAVE_MS);
+}
+
 export async function loadBenchmarkConfig() {
   try {
     const { ok, status, data } = await requestJson("/api/benchmark-config");
@@ -190,7 +203,9 @@ export async function loadBenchmarkConfig() {
   }
 }
 
-export async function saveBenchmarkConfig() {
+export async function saveBenchmarkConfig({ quiet = false, rerenderAfter = true } = {}) {
+  if (isBenchmarkSaving) return;
+  isBenchmarkSaving = true;
   syncProfileFromForm();
   try {
     const payload = {
@@ -226,10 +241,18 @@ export async function saveBenchmarkConfig() {
       runtimeBenchmarkProfileId = profiles[0]?.id || "default";
       await saveRuntimeBenchmarkProfile(runtimeBenchmarkProfileId);
     }
-    rerenderAll();
-    setStatus("benchmarkStatus", t("statusBenchmarkSaved", { time: data.time }), "ok");
+    if (rerenderAfter) {
+      rerenderAll();
+    }
+    if (!quiet) {
+      setStatus("benchmarkStatus", t("statusBenchmarkSaved", { time: data.time }), "ok");
+    }
   } catch (err) {
-    setStatus("benchmarkStatus", t("statusBenchmarkSaveFail", { reason: err }), "err");
+    if (!quiet) {
+      setStatus("benchmarkStatus", t("statusBenchmarkSaveFail", { reason: err }), "err");
+    }
+  } finally {
+    isBenchmarkSaving = false;
   }
 }
 
@@ -237,6 +260,7 @@ function onProfileChange(event) {
   syncProfileFromForm();
   const target = event.target;
   if (!(target instanceof HTMLSelectElement)) return;
+  scheduleBenchmarkAutoSave();
   selectedProfileId = target.value;
   renderProfileForm();
 }
@@ -260,6 +284,7 @@ function addProfile() {
   input.value = "";
   rerenderAll();
   setStatus("benchmarkStatus", t("statusBenchmarkProfileAdded", { id: newId }), "ok");
+  void saveBenchmarkConfig({ quiet: true, rerenderAfter: false });
 }
 
 function deleteProfile() {
@@ -275,6 +300,7 @@ function deleteProfile() {
   }
   rerenderAll();
   setStatus("benchmarkStatus", t("statusBenchmarkProfileDeleted"), "ok");
+  void saveBenchmarkConfig({ quiet: true, rerenderAfter: false });
 }
 
 function addTokenLengthOption() {
@@ -294,6 +320,7 @@ function addTokenLengthOption() {
   }
   input.value = "";
   renderProfileForm();
+  scheduleBenchmarkAutoSave();
 }
 
 export function initBenchmarkConfigFeature() {
@@ -303,9 +330,13 @@ export function initBenchmarkConfigFeature() {
   const deleteProfileBtn = document.getElementById("benchmarkDeleteProfileBtn");
   const addTokenBtn = document.getElementById("benchmarkAddTokenLengthBtn");
   const reloadBtn = document.getElementById("benchmarkReloadBtn");
-  const saveBtn = document.getElementById("benchmarkSaveBtn");
+  const nameSelect = document.getElementById("benchmarkNameSelect");
+  const endpointType = document.getElementById("benchmarkEndpointType");
+  const datasetPath = document.getElementById("benchmarkDatasetPath");
+  const tokenLengthsSelect = document.getElementById("benchmarkTokenLengthsSelect");
+  const concurrencySelect = document.getElementById("benchmarkConcurrencySelect");
 
-  if (!profileSelect || !runtimeProfileSelect || !addProfileBtn || !deleteProfileBtn || !addTokenBtn || !reloadBtn || !saveBtn) return;
+  if (!profileSelect || !runtimeProfileSelect || !addProfileBtn || !deleteProfileBtn || !addTokenBtn || !reloadBtn || !(nameSelect instanceof HTMLSelectElement) || !(endpointType instanceof HTMLSelectElement) || !(datasetPath instanceof HTMLInputElement) || !(tokenLengthsSelect instanceof HTMLSelectElement) || !(concurrencySelect instanceof HTMLSelectElement)) return;
 
   profileSelect.addEventListener("change", onProfileChange);
   runtimeProfileSelect.addEventListener("change", (event) => {
@@ -317,5 +348,9 @@ export function initBenchmarkConfigFeature() {
   deleteProfileBtn.addEventListener("click", deleteProfile);
   addTokenBtn.addEventListener("click", addTokenLengthOption);
   reloadBtn.addEventListener("click", loadBenchmarkConfig);
-  saveBtn.addEventListener("click", saveBenchmarkConfig);
+  nameSelect.addEventListener("change", scheduleBenchmarkAutoSave);
+  endpointType.addEventListener("change", scheduleBenchmarkAutoSave);
+  datasetPath.addEventListener("input", scheduleBenchmarkAutoSave);
+  tokenLengthsSelect.addEventListener("change", scheduleBenchmarkAutoSave);
+  concurrencySelect.addEventListener("change", scheduleBenchmarkAutoSave);
 }
