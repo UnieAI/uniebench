@@ -56,6 +56,23 @@
   flex: 1;
 }
 
+.global-upload-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  align-items: center;
+}
+
+.global-upload-row input[type="file"] {
+  flex: 1;
+  min-height: 38px;
+  padding: 6px;
+}
+
+.global-upload-row .action {
+  white-space: nowrap;
+}
+
 .global-model-list {
   display: flex;
   flex-wrap: wrap;

@@ -1,4 +1,4 @@
-import { requestJson } from "../core/api.js";
+import { apiBase, requestJson } from "../core/api.js";
 import { t } from "../core/i18n.js";
 import { escapeHtml, setStatus } from "../core/ui.js";
 
@@ -44,6 +44,10 @@ function setValue(id, value) {
   const el = document.getElementById(id);
   if (!(el instanceof HTMLInputElement)) return;
   el.value = String(value || "");
+}
+
+function renderServiceAccountStatus(exists) {
+  setValue("globalServiceAccountStatus", exists ? t("globalServiceAccountExists") : t("globalServiceAccountMissing"));
 }
 
 function onAddModelName() {
@@ -96,6 +100,7 @@ export async function loadGlobalConfig() {
     suppressAutoSave = true;
     setValue("globalModelPath", data.model_path || "");
     setValue("globalDefaultBaseUrl", data.default_base_url || "");
+    renderServiceAccountStatus(Boolean(data.service_account_json_exists));
     modelNames = normalizeModelNames(data.model_names || []);
     renderModelNameList();
     suppressAutoSave = false;
@@ -103,6 +108,40 @@ export async function loadGlobalConfig() {
   } catch (err) {
     suppressAutoSave = false;
     setStatus("globalConfigStatus", t("statusGlobalConfigLoadFail", { reason: err }), "err");
+  }
+}
+
+async function uploadServiceAccountJson() {
+  const fileInput = document.getElementById("globalServiceAccountFile");
+  if (!(fileInput instanceof HTMLInputElement)) return;
+  const file = fileInput.files && fileInput.files[0];
+  if (!file) {
+    setStatus("globalConfigStatus", t("statusServiceAccountUploadNeedFile"), "err");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("file", file, file.name || "service_account.json");
+
+  try {
+    const res = await fetch(`${apiBase()}/api/global-config/service-account`, {
+      method: "POST",
+      body: formData,
+    });
+    let data = {};
+    try {
+      data = await res.json();
+    } catch {
+      data = {};
+    }
+    if (!res.ok) {
+      throw new Error(data.detail || res.status);
+    }
+    renderServiceAccountStatus(Boolean(data.service_account_json_exists));
+    fileInput.value = "";
+    setStatus("globalConfigStatus", t("statusServiceAccountUploaded"), "ok");
+  } catch (err) {
+    setStatus("globalConfigStatus", t("statusServiceAccountUploadFail", { reason: err }), "err");
   }
 }
 
@@ -122,6 +161,7 @@ export async function saveGlobalConfig() {
       throw new Error(data.detail || status);
     }
     modelNames = normalizeModelNames(data.model_names || payload.model_names);
+    renderServiceAccountStatus(Boolean(data.service_account_json_exists));
     renderModelNameList();
     setStatus("globalConfigStatus", t("statusGlobalConfigSaved", { time: data.time }), "ok");
   } catch (err) {
@@ -147,12 +187,15 @@ export function initGlobalConfigFeature() {
   const modelInput = document.getElementById("globalModelNameInput");
   const modelPathInput = document.getElementById("globalModelPath");
   const defaultBaseUrlInput = document.getElementById("globalDefaultBaseUrl");
+  const uploadBtn = document.getElementById("uploadServiceAccountBtn");
+  const fileInput = document.getElementById("globalServiceAccountFile");
   const list = document.getElementById("globalModelNameList");
-  if (!loadBtn || !discoverBtn || !addBtn || !modelInput || !modelPathInput || !defaultBaseUrlInput || !list) return;
+  if (!loadBtn || !discoverBtn || !addBtn || !modelInput || !modelPathInput || !defaultBaseUrlInput || !uploadBtn || !fileInput || !list) return;
 
   loadBtn.addEventListener("click", loadGlobalConfig);
   discoverBtn.addEventListener("click", discoverGlobalModelNames);
   addBtn.addEventListener("click", onAddModelName);
+  uploadBtn.addEventListener("click", uploadServiceAccountJson);
   modelPathInput.addEventListener("input", scheduleGlobalConfigSave);
   defaultBaseUrlInput.addEventListener("input", scheduleGlobalConfigSave);
   modelInput.addEventListener("keydown", (event) => {

@@ -42,6 +42,7 @@ CONFIG_GLOBAL_CONFIG_KEY = "global_config"
 CONFIG_MODEL_PATH_KEY = "model_path"
 CONFIG_MODEL_NAMES_KEY = "model_names"
 CONFIG_DEFAULT_BASE_URL_KEY = "default_base_url"
+SERVICE_ACCOUNT_FILE_NAME = "service_account.json"
 DEFAULT_MODEL_PATH = "/home/ubuntu/models"
 DEFAULT_BASE_URL = "http://localhost"
 
@@ -797,6 +798,10 @@ def _read_global_config(config_path: Path) -> Dict[str, Any]:
     return global_cfg if isinstance(global_cfg, dict) else {}
 
 
+def _service_account_path(config_path: Path) -> Path:
+    return config_path.parent / SERVICE_ACCOUNT_FILE_NAME
+
+
 def _normalize_model_names(raw: Any) -> List[str]:
     if not isinstance(raw, list):
         return []
@@ -893,11 +898,14 @@ def get_global_config(config_path: Path) -> Dict[str, Any]:
     model_path = str(raw.get(CONFIG_MODEL_PATH_KEY, "") or "").strip() or DEFAULT_MODEL_PATH
     default_base_url = str(raw.get(CONFIG_DEFAULT_BASE_URL_KEY, "") or "").strip() or DEFAULT_BASE_URL
     model_names = _normalize_model_names(raw.get(CONFIG_MODEL_NAMES_KEY, []))
+    service_account_path = _service_account_path(config_path)
 
     return {
         "model_path": model_path,
         "model_names": model_names,
         "default_base_url": default_base_url,
+        "service_account_json_exists": service_account_path.exists() and service_account_path.is_file(),
+        "service_account_json_path": str(service_account_path),
         "cuda_version": _detect_cuda_version(),
         "cpu_model": _detect_cpu_model(),
         "gpu_model": _detect_gpu_model(),
@@ -935,6 +943,43 @@ def discover_model_names(model_path: str) -> Dict[str, Any]:
     return {
         "model_path": normalized_path,
         "model_names": model_names,
+    }
+
+
+def save_service_account_json(
+    config_path: Path,
+    lock: threading.Lock,
+    file_name: str,
+    content: bytes,
+) -> Dict[str, Any]:
+    input_name = str(file_name or "").strip()
+    if input_name == "":
+        raise ValueError("Missing file name")
+    if not input_name.lower().endswith(".json"):
+        raise ValueError("Only .json files are supported")
+    if not content:
+        raise ValueError("Uploaded file is empty")
+
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ValueError("JSON file must be UTF-8 encoded") from exc
+
+    try:
+        json.loads(text)
+    except Exception as exc:
+        raise ValueError(f"Invalid JSON content: {exc}") from exc
+
+    target_path = _service_account_path(config_path)
+    with lock:
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        normalized = text if text.endswith("\n") else f"{text}\n"
+        target_path.write_text(normalized, encoding="utf-8")
+
+    return {
+        "service_account_json_exists": True,
+        "service_account_json_path": str(target_path),
+        "saved_file_name": SERVICE_ACCOUNT_FILE_NAME,
     }
 
 
