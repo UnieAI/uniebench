@@ -19,8 +19,9 @@ default_config:
       - path: /workspace/jeff/Benchmark-Autotest/services/default/default_script.sh
         name: default_script
         tp_size: 1
-        model_name: Qwen/Qwen3-0.6B
         model_id: qwen3-0.6b
+        model_name: Qwen/Qwen3-0.6B
+        model_path: /home/ubuntu/models
         base_url: http://localhost
         port: 12470
       base_url: 0
@@ -54,8 +55,9 @@ dashboard:
     metadata:
       default/default_script.sh:
         tp_size: '1'
-        model_name: Qwen/Qwen3-0.6B
         model_id: qwen3-0.6b
+        model_name: Qwen/Qwen3-0.6B
+        model_path: /home/ubuntu/models
         base_url: http://localhost
         port: '12470'
     last_test:
