@@ -35,6 +35,14 @@
   min-height: 560px;
 }
 
+.script-pane-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
 .script-list {
   display: flex;
   flex-direction: column;
@@ -207,6 +215,15 @@
   font-size: 14px;
 }
 
+.endpoint-row select {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  min-height: 38px;
+  background: #fff;
+  font-size: 14px;
+}
+
 .endpoint-popup-row {
   margin-bottom: 10px;
 }
@@ -285,6 +302,10 @@
   border-radius: 12px;
   padding: 12px;
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.2);
+}
+
+.small-popup-card {
+  width: min(460px, 96vw);
 }
 
 .test-popup-header {

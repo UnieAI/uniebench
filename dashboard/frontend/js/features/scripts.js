@@ -230,6 +230,46 @@ function renderGroupSelectors() {
   setSelectOptions(moveSelect, selectedScriptGroup || "default");
 }
 
+function showCreateScriptPopup() {
+  const popup = document.getElementById("createScriptPopup");
+  if (!popup) return;
+  renderGroupSelectors();
+  const input = document.getElementById("newScriptName");
+  if (input instanceof HTMLInputElement) {
+    input.value = "";
+    window.setTimeout(() => input.focus(), 0);
+  }
+  popup.classList.remove("hidden");
+}
+
+function hideCreateScriptPopup() {
+  const popup = document.getElementById("createScriptPopup");
+  if (!popup) return;
+  popup.classList.add("hidden");
+}
+
+function showMoveScriptPopup() {
+  if (!selectedScriptPath) {
+    setStatus("scriptsStatus", t("statusScriptMoveNeedSelect"), "err");
+    return;
+  }
+  const popup = document.getElementById("moveScriptPopup");
+  if (!popup) return;
+  renderGroupSelectors();
+  const input = document.getElementById("moveScriptGroupInput");
+  if (input instanceof HTMLInputElement) {
+    input.value = "";
+    window.setTimeout(() => input.focus(), 0);
+  }
+  popup.classList.remove("hidden");
+}
+
+function hideMoveScriptPopup() {
+  const popup = document.getElementById("moveScriptPopup");
+  if (!popup) return;
+  popup.classList.add("hidden");
+}
+
 function renderRuntimeServerGroupSelect() {
   const selectEl = document.getElementById("runtimeServerGroupSelect");
   if (!(selectEl instanceof HTMLSelectElement)) return;
@@ -817,6 +857,7 @@ async function createScript() {
     await refreshScripts(targetPath);
     await loadScript(targetPath, false);
     setStatus("scriptsStatus", t("statusScriptCreated", { name: data.name || rawName }), "ok");
+    hideCreateScriptPopup();
   } catch (err) {
     setStatus("scriptsStatus", t("statusScriptCreateFail", { reason: err }), "err");
   }
@@ -853,6 +894,7 @@ async function moveScript() {
     await refreshScripts(targetPath);
     await loadScript(targetPath, false);
     setStatus("scriptsStatus", t("statusScriptMoved", { group: targetGroup }), "ok");
+    hideMoveScriptPopup();
   } catch (err) {
     setStatus("scriptsStatus", t("statusScriptMoveFail", { reason: err }), "err");
   }
@@ -1160,8 +1202,12 @@ export function initScriptsFeature() {
   if (!listEl) return;
 
   const refreshBtn = document.getElementById("refreshScriptsBtn");
-  const createBtn = document.getElementById("createScriptBtn");
-  const moveBtn = document.getElementById("moveScriptBtn");
+  const openCreateBtn = document.getElementById("openCreateScriptPopupBtn");
+  const openMoveBtn = document.getElementById("openMoveScriptPopupBtn");
+  const createBtn = document.getElementById("confirmCreateScriptBtn");
+  const moveBtn = document.getElementById("confirmMoveScriptBtn");
+  const cancelCreateBtn = document.getElementById("cancelCreateScriptBtn");
+  const cancelMoveBtn = document.getElementById("cancelMoveScriptBtn");
   const saveBtn = document.getElementById("saveScriptBtn");
   const testBtn = document.getElementById("testScriptBtn");
   const testInHostBtn = document.getElementById("testInHostBtn");
@@ -1176,7 +1222,7 @@ export function initScriptsFeature() {
   const newScriptInput = document.getElementById("newScriptName");
   const runtimeServerSelect = document.getElementById("runtimeServerGroupSelect");
 
-  if (!refreshBtn || !createBtn || !moveBtn || !saveBtn || !testBtn || !testInHostBtn || !autoDetectBtn || !popupStartBtn || !popupStopBtn || !closePopupBtn || !closeHostPopupBtn || !hostEndpointInput || !hostApplyResultBtn || !endpointInput || !newScriptInput || !runtimeServerSelect) {
+  if (!refreshBtn || !openCreateBtn || !openMoveBtn || !createBtn || !moveBtn || !cancelCreateBtn || !cancelMoveBtn || !saveBtn || !testBtn || !testInHostBtn || !autoDetectBtn || !popupStartBtn || !popupStopBtn || !closePopupBtn || !closeHostPopupBtn || !hostEndpointInput || !hostApplyResultBtn || !endpointInput || !newScriptInput || !runtimeServerSelect) {
     return;
   }
 
@@ -1196,8 +1242,12 @@ export function initScriptsFeature() {
   listEl.addEventListener("change", onScriptListToggleChange);
 
   refreshBtn.addEventListener("click", () => refreshScripts(selectedScriptPath));
+  openCreateBtn.addEventListener("click", showCreateScriptPopup);
+  openMoveBtn.addEventListener("click", showMoveScriptPopup);
   createBtn.addEventListener("click", createScript);
   moveBtn.addEventListener("click", moveScript);
+  cancelCreateBtn.addEventListener("click", hideCreateScriptPopup);
+  cancelMoveBtn.addEventListener("click", hideMoveScriptPopup);
   saveBtn.addEventListener("click", saveScript);
   testBtn.addEventListener("click", openTestPopup);
   testInHostBtn.addEventListener("click", openHostTestPopup);
@@ -1220,6 +1270,15 @@ export function initScriptsFeature() {
       createScript();
     }
   });
+  const moveGroupInput = document.getElementById("moveScriptGroupInput");
+  if (moveGroupInput instanceof HTMLInputElement) {
+    moveGroupInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        moveScript();
+      }
+    });
+  }
 
   renderTestPopup();
   renderHostTestPopup();

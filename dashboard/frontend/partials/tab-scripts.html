@@ -7,28 +7,22 @@
   <div class="script-layout">
     <div class="script-pane">
       <div class="btn-row">
-        <button id="refreshScriptsBtn" class="action secondary" data-i18n="btnRefreshScripts">重新載入腳本</button>
+        <button id="refreshScriptsBtn" class="action info" data-i18n="btnRefreshScripts">重新載入腳本</button>
       </div>
       <div id="scriptsDirHint" class="hint">--</div>
       <div id="scriptList" class="script-list"></div>
     </div>
     <div class="script-pane">
-      <div class="new-script-row">
-        <select id="createScriptGroupSelect"></select>
-        <input id="newScriptName" type="text" data-i18n-placeholder="newScriptPlaceholder" placeholder="輸入新腳本名稱（例如 run_xxx.sh）" />
-        <button id="createScriptBtn" class="action" data-i18n="btnCreateScript">新增腳本</button>
-      </div>
-      <div class="move-script-row">
-        <select id="moveScriptGroupSelect"></select>
-        <input id="moveScriptGroupInput" type="text" data-i18n-placeholder="moveScriptGroupPlaceholder" placeholder="輸入目標群組（留空則使用左側選單）" />
-        <button id="moveScriptBtn" class="action secondary" data-i18n="btnMoveScript">移動腳本</button>
+      <div class="script-pane-toolbar">
+        <button id="openMoveScriptPopupBtn" class="action info" data-i18n="btnMoveScript">移動腳本</button>
+        <button id="openCreateScriptPopupBtn" class="action success" data-i18n="btnCreateScript">新增腳本</button>
       </div>
       <div id="scriptEditorHint" class="hint" data-i18n="scriptEditorHint">點選左側腳本即可編輯</div>
       <div class="script-actions">
-        <button id="saveScriptBtn" class="action" data-i18n="btnSaveScript">儲存腳本</button>
+        <button id="saveScriptBtn" class="action success" data-i18n="btnSaveScript">儲存腳本</button>
         <button id="testScriptBtn" class="action secondary" data-i18n="btnTestScript">測試腳本</button>
-        <button id="testInHostBtn" class="action secondary" data-i18n="btnTestInHost">在 Host 測試</button>
-        <button id="autoDetectScriptMetaBtn" class="action secondary" data-i18n="btnAutoDetect">自動偵測</button>
+        <button id="testInHostBtn" class="action info" data-i18n="btnTestInHost">在 Host 測試</button>
+        <button id="autoDetectScriptMetaBtn" class="action warning" data-i18n="btnAutoDetect">自動偵測</button>
       </div>
       <div class="script-meta-grid">
         <div class="script-meta-item">
@@ -143,9 +137,49 @@
         ></textarea>
       </div>
       <div class="script-actions popup-action-row">
-        <button id="applyHostTestResultBtn" class="action" data-i18n="btnApplyHostResult">回填結果</button>
+        <button id="applyHostTestResultBtn" class="action success" data-i18n="btnApplyHostResult">回填結果</button>
       </div>
       <div id="hostTestResultEcho" class="hint">--</div>
+    </div>
+  </div>
+
+  <div id="createScriptPopup" class="test-popup hidden">
+    <div class="test-popup-card small-popup-card">
+      <div class="test-popup-header">
+        <div class="test-popup-title" data-i18n="createScriptPopupTitle">新增腳本</div>
+      </div>
+      <div class="endpoint-row">
+        <label for="createScriptGroupSelect" data-i18n="scriptGroupLabel">群組</label>
+        <select id="createScriptGroupSelect"></select>
+      </div>
+      <div class="endpoint-row">
+        <label for="newScriptName" data-i18n="scriptNameLabel">腳本名稱</label>
+        <input id="newScriptName" type="text" data-i18n-placeholder="newScriptPlaceholder" placeholder="輸入新腳本名稱（例如 run_xxx.sh）" />
+      </div>
+      <div class="script-actions popup-action-row">
+        <button id="confirmCreateScriptBtn" class="action success" data-i18n="btnConfirm">確認</button>
+        <button id="cancelCreateScriptBtn" class="action secondary" data-i18n="btnCancel">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="moveScriptPopup" class="test-popup hidden">
+    <div class="test-popup-card small-popup-card">
+      <div class="test-popup-header">
+        <div class="test-popup-title" data-i18n="moveScriptPopupTitle">移動腳本</div>
+      </div>
+      <div class="endpoint-row">
+        <label for="moveScriptGroupSelect" data-i18n="scriptGroupLabel">目標群組</label>
+        <select id="moveScriptGroupSelect"></select>
+      </div>
+      <div class="endpoint-row">
+        <label for="moveScriptGroupInput" data-i18n="scriptGroupOverrideLabel">或輸入新群組</label>
+        <input id="moveScriptGroupInput" type="text" data-i18n-placeholder="moveScriptGroupPlaceholder" placeholder="輸入目標群組（留空則使用左側選單）" />
+      </div>
+      <div class="script-actions popup-action-row">
+        <button id="confirmMoveScriptBtn" class="action info" data-i18n="btnConfirm">確認</button>
+        <button id="cancelMoveScriptBtn" class="action secondary" data-i18n="btnCancel">取消</button>
+      </div>
     </div>
   </div>
 </section>

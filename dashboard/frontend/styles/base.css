@@ -162,10 +162,20 @@ button.action {
   border-radius: 8px;
   cursor: pointer;
   font-weight: 700;
+  transition: filter 0.15s ease;
 }
 
 button.action.secondary { background: #374151; }
+button.action.info { background: #1d4ed8; }
+button.action.success { background: #15803d; }
+button.action.warning { background: #b45309; }
 button.action.danger { background: #b91c1c; }
+button.action:hover { filter: brightness(1.06); }
+button.action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: none;
+}
 
 textarea {
   width: 100%;
