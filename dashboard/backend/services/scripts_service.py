@@ -180,7 +180,11 @@ def build_host_test_script(script_dir: Path, script_rel_path: str, endpoint_url:
         "#!/usr/bin/env bash",
         "set -euo pipefail",
         "",
-        f"SCRIPT_PATH={shlex.quote(str(script_path.resolve()))}",
+        "SCRIPT_DIR=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd)\"",
+        "REPO_ROOT=\"$(cd \"$SCRIPT_DIR/../..\" && pwd)\"",
+        "cd \"$REPO_ROOT\"",
+        f"REL_SCRIPT_PATH={shlex.quote(f'services/{normalized_rel}')}",
+        "SCRIPT_PATH=\"$REPO_ROOT/$REL_SCRIPT_PATH\"",
         f"ENDPOINT={shlex.quote(endpoint)}",
         f"LOG_FILE={shlex.quote(log_file)}",
         "FINAL_STATUS=\"PASS\"",
@@ -302,7 +306,7 @@ def build_host_test_script(script_dir: Path, script_rel_path: str, endpoint_url:
 
     helper_path.write_text(content, encoding="utf-8")
     helper_path.chmod(helper_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    command = f"bash {shlex.quote(str(helper_path.resolve()))}"
+    command = "bash \"$(git rev-parse --show-toplevel)/services/__test__/test.sh\""
     return {
         "script_path": normalized_rel,
         "helper_path": str(helper_path.resolve()),

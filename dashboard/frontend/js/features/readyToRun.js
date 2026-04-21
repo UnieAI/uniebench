@@ -69,7 +69,7 @@ function openReadyRunPopup() {
   const popup = document.getElementById("readyRunPopup");
   const pre = document.getElementById("readyRunCommandOutput");
   if (!popup || !pre) return;
-  pre.textContent = "cd /workspace/jeff/Benchmark-Autotest && uv venv .venv.autotest && . .venv.autotest/bin/activate && uv pip install -r requirements.txt && python main.py";
+  pre.textContent = "REPO_ROOT=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\" && cd \"$REPO_ROOT\" && uv venv .venv.autotest && . .venv.autotest/bin/activate && uv pip install -r requirements.txt && python main.py";
   popup.classList.remove("hidden");
 }
 
