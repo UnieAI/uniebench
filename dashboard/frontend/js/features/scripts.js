@@ -947,6 +947,36 @@ async function moveScript() {
   }
 }
 
+async function deleteScript() {
+  if (!selectedScriptPath) {
+    setStatus("scriptsStatus", t("statusScriptNeedSelect"), "err");
+    return;
+  }
+  const confirmed = window.confirm(t("statusScriptDeleteConfirm", { name: selectedScriptName || selectedScriptPath }));
+  if (!confirmed) return;
+
+  if (scriptAutoSaveTimer !== null) {
+    window.clearTimeout(scriptAutoSaveTimer);
+    scriptAutoSaveTimer = null;
+  }
+
+  try {
+    const { ok, status, data } = await requestJson(`/api/scripts/${encodeScriptPath(selectedScriptPath)}`, {
+      method: "DELETE",
+    });
+    if (!ok) {
+      throw new Error(data.detail || status);
+    }
+    const deletedName = selectedScriptName || selectedScriptPath;
+    selectedScriptPath = "";
+    selectedScriptName = "";
+    await refreshScripts();
+    setStatus("scriptsStatus", t("statusScriptDeleted", { name: deletedName }), "ok");
+  } catch (err) {
+    setStatus("scriptsStatus", t("statusScriptDeleteFail", { reason: err }), "err");
+  }
+}
+
 async function saveScript({ quiet = false, refreshAfter = true } = {}) {
   if (!selectedScriptPath) {
     if (!quiet) {
@@ -1263,6 +1293,7 @@ export function initScriptsFeature() {
   const refreshBtn = document.getElementById("refreshScriptsBtn");
   const openCreateBtn = document.getElementById("openCreateScriptPopupBtn");
   const openMoveBtn = document.getElementById("openMoveScriptPopupBtn");
+  const deleteBtn = document.getElementById("deleteScriptBtn");
   const createBtn = document.getElementById("confirmCreateScriptBtn");
   const moveBtn = document.getElementById("confirmMoveScriptBtn");
   const cancelCreateBtn = document.getElementById("cancelCreateScriptBtn");
@@ -1286,7 +1317,7 @@ export function initScriptsFeature() {
   const scriptMetaBaseUrl = getMetaInput("scriptMetaBaseUrl");
   const scriptMetaPort = getMetaInput("scriptMetaPort");
 
-  if (!refreshBtn || !openCreateBtn || !openMoveBtn || !createBtn || !moveBtn || !cancelCreateBtn || !cancelMoveBtn || !testBtn || !testInHostBtn || !autoDetectBtn || !popupStartBtn || !popupStopBtn || !closePopupBtn || !closeHostPopupBtn || !hostEndpointInput || !hostApplyResultBtn || !endpointInput || !newScriptInput || !runtimeServerSelect || !(scriptEditor instanceof HTMLTextAreaElement) || !scriptMetaTpSize || !scriptMetaModelName || !scriptMetaModelId || !scriptMetaBaseUrl || !scriptMetaPort) {
+  if (!refreshBtn || !openCreateBtn || !openMoveBtn || !deleteBtn || !createBtn || !moveBtn || !cancelCreateBtn || !cancelMoveBtn || !testBtn || !testInHostBtn || !autoDetectBtn || !popupStartBtn || !popupStopBtn || !closePopupBtn || !closeHostPopupBtn || !hostEndpointInput || !hostApplyResultBtn || !endpointInput || !newScriptInput || !runtimeServerSelect || !(scriptEditor instanceof HTMLTextAreaElement) || !scriptMetaTpSize || !scriptMetaModelName || !scriptMetaModelId || !scriptMetaBaseUrl || !scriptMetaPort) {
     return;
   }
 
@@ -1306,6 +1337,7 @@ export function initScriptsFeature() {
   listEl.addEventListener("change", onScriptListToggleChange);
 
   refreshBtn.addEventListener("click", () => refreshScripts(selectedScriptPath));
+  deleteBtn.addEventListener("click", deleteScript);
   openCreateBtn.addEventListener("click", showCreateScriptPopup);
   openMoveBtn.addEventListener("click", showMoveScriptPopup);
   createBtn.addEventListener("click", createScript);

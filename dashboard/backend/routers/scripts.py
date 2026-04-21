@@ -13,6 +13,7 @@ from dashboard.backend.schemas import (
 from dashboard.backend.services.scripts_service import (
     build_host_test_script,
     create_script_path,
+    delete_script_path,
     get_script_last_test_result,
     get_script_metadata,
     get_script_enabled,
@@ -24,6 +25,9 @@ from dashboard.backend.services.scripts_service import (
     move_script_test_result,
     pick_scripts_dir,
     read_script,
+    remove_script_enabled_state,
+    remove_script_metadata,
+    remove_script_test_result,
     resolve_script_path,
     set_script_enabled,
     set_script_last_test_result,
@@ -175,6 +179,33 @@ def script_move(payload: ScriptMovePayload) -> dict:
         "from": source_rel,
         "to": target_rel,
         "path": str(target_path),
+        "time": now_iso(),
+    }
+
+
+@router.delete("/{script_path:path}")
+def script_delete(script_path: str) -> dict:
+    script_dir = pick_scripts_dir(SCRIPTS_DIR_CANDIDATES, create=True)
+    try:
+        deleted_path, normalized_path = delete_script_path(script_dir, script_path)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    remove_script_enabled_state(normalized_path, CONFIG_PATH, WRITE_LOCK)
+    remove_script_metadata(normalized_path, CONFIG_PATH, WRITE_LOCK)
+    remove_script_test_result(normalized_path, CONFIG_PATH, WRITE_LOCK)
+    sync_info = sync_default_config_servers(
+        script_dir=script_dir,
+        config_path=CONFIG_PATH,
+        lock=WRITE_LOCK,
+    )
+    return {
+        "deleted": True,
+        "script_path": normalized_path,
+        "path": str(deleted_path),
+        "default_config_server_sync": sync_info,
         "time": now_iso(),
     }
 

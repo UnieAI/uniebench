@@ -348,6 +348,20 @@ def move_script_path(script_dir: Path, source_rel_path: str, target_group: str) 
     return target_path, normalized_source, normalized_target
 
 
+def delete_script_path(script_dir: Path, script_rel_path: str) -> Tuple[Path, str]:
+    script_path, normalized_path = resolve_script_path(script_dir, script_rel_path)
+    if not script_path.exists() or not script_path.is_file():
+        raise FileNotFoundError(f"Script not found: {normalized_path}")
+    script_path.unlink()
+    parent = script_path.parent
+    try:
+        if parent != script_dir and parent.exists() and parent.is_dir() and not any(parent.iterdir()):
+            parent.rmdir()
+    except Exception:
+        pass
+    return script_path, normalized_path
+
+
 def _default_enabled_for_path(script_rel_path: str) -> bool:
     return Path(script_rel_path).name == "default_script.sh"
 
@@ -561,6 +575,14 @@ def move_script_enabled_state(source_rel_path: str, target_rel_path: str, config
     _write_enabled_map(config_path, lock, enabled_map)
 
 
+def remove_script_enabled_state(script_rel_path: str, config_path: Path, lock: threading.Lock) -> None:
+    normalized_path = _normalize_rel_script_path(script_rel_path)
+    enabled_map = _read_enabled_map(config_path)
+    if normalized_path in enabled_map:
+        enabled_map.pop(normalized_path, None)
+        _write_enabled_map(config_path, lock, enabled_map)
+
+
 def get_script_metadata(script_rel_path: str, config_path: Path) -> Dict[str, str]:
     normalized = _normalize_rel_script_path(script_rel_path)
     metadata_map = _read_metadata_map(config_path)
@@ -585,6 +607,14 @@ def move_script_metadata(source_rel_path: str, target_rel_path: str, config_path
     metadata_map = _read_metadata_map(config_path)
     if normalized_source in metadata_map:
         metadata_map[normalized_target] = metadata_map.pop(normalized_source)
+        _write_metadata_map(config_path, lock, metadata_map)
+
+
+def remove_script_metadata(script_rel_path: str, config_path: Path, lock: threading.Lock) -> None:
+    normalized_path = _normalize_rel_script_path(script_rel_path)
+    metadata_map = _read_metadata_map(config_path)
+    if normalized_path in metadata_map:
+        metadata_map.pop(normalized_path, None)
         _write_metadata_map(config_path, lock, metadata_map)
 
 
@@ -1013,6 +1043,17 @@ def move_script_test_result(source_rel_path: str, target_rel_path: str, config_p
     last_test_map = _read_last_test_map(config_path)
     if normalized_source in last_test_map:
         last_test_map[normalized_target] = last_test_map.pop(normalized_source)
+        _write_last_test_map(config_path, lock, last_test_map)
+
+
+def remove_script_test_result(script_rel_path: str, config_path: Path, lock: threading.Lock) -> None:
+    normalized_path = _normalize_rel_script_path(script_rel_path)
+    with _SCRIPT_TEST_LOCK:
+        _SCRIPT_TEST_RESULTS.pop(normalized_path, None)
+
+    last_test_map = _read_last_test_map(config_path)
+    if normalized_path in last_test_map:
+        last_test_map.pop(normalized_path, None)
         _write_last_test_map(config_path, lock, last_test_map)
 
 
