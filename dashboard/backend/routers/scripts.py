@@ -221,6 +221,12 @@ def script_set_enabled(script_path: str, payload: ScriptEnabledPayload) -> dict:
         raise HTTPException(status_code=404, detail=f"Script not found: {normalized_path}")
 
     changed = set_script_enabled(normalized_path, payload.enabled, CONFIG_PATH, WRITE_LOCK)
+    sync_info = sync_default_config_servers(
+        script_dir=script_dir,
+        config_path=CONFIG_PATH,
+        lock=WRITE_LOCK,
+    )
+    changed["default_config_server_sync"] = sync_info
     changed["time"] = now_iso()
     return changed
 

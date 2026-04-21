@@ -735,10 +735,14 @@ def _to_int_or_zero(value: Any) -> int:
 
 def sync_default_config_servers(script_dir: Path, config_path: Path, lock: threading.Lock) -> Dict[str, Any]:
     rows = list_scripts(script_dir)
+    path_list = [row["path"] for row in rows]
+    enabled_map = sync_enabled_map(path_list, config_path, lock)
     grouped: Dict[str, List[Dict[str, Any]]] = {}
 
     for row in rows:
         rel_path = row["path"]
+        if not bool(enabled_map.get(rel_path, _default_enabled_for_path(rel_path))):
+            continue
         group = row["group"]
         name = row["name"]
         resolved_path, _ = resolve_script_path(script_dir, rel_path)
@@ -785,7 +789,8 @@ def sync_default_config_servers(script_dir: Path, config_path: Path, lock: threa
 
     return {
         "groups": len(server_rows),
-        "scripts": len(rows),
+        "scripts": sum(len(items) for items in grouped.values()),
+        "total_scripts": len(rows),
     }
 
 
