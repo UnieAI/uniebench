@@ -165,6 +165,7 @@ button.action {
 }
 
 button.action.secondary { background: #374151; }
+button.action.danger { background: #b91c1c; }
 
 textarea {
   width: 100%;
@@ -227,6 +228,53 @@ textarea {
   padding: 10px;
 }
 
+.ready-list-header {
+  margin-bottom: 8px;
+}
+
+.ready-list-toggle-btn {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 800;
+  color: #0f172a;
+  cursor: pointer;
+}
+
+.ready-list-toggle-btn::after {
+  content: "▾";
+  color: #334155;
+}
+
+.ready-list-toggle-btn.collapsed::after {
+  content: "▸";
+}
+
+.ready-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  border-radius: 999px;
+  border: 1px solid #bae6fd;
+  background: #e0f2fe;
+  color: #0c4a6e;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.ready-items-list-wrap.collapsed {
+  display: none;
+}
+
 .ready-list-title {
   font-size: 14px;
   font-weight: 800;
@@ -252,4 +300,18 @@ textarea {
 .ready-empty {
   font-size: 13px;
   color: #64748b;
+}
+
+.ready-run-row {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ready-run-popup-card {
+  width: min(760px, 96vw);
+}
+
+#testScriptBtn {
+  display: none;
 }

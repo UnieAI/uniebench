@@ -4,6 +4,8 @@ import { t } from "../core/i18n.js";
 
 let readySaveTimer = null;
 let suppressReadySave = false;
+let readyItemsCollapsed = true;
+let readyItemsCount = 0;
 
 function getInput(id) {
   const el = document.getElementById(id);
@@ -37,8 +39,11 @@ function payloadFromForm() {
 
 function renderReadyItems(items) {
   const listEl = document.getElementById("readyItemsList");
+  const badgeEl = document.getElementById("readyItemsCountBadge");
   if (!listEl) return;
   const rows = Array.isArray(items) ? items : [];
+  readyItemsCount = rows.length;
+  if (badgeEl) badgeEl.textContent = String(readyItemsCount);
   if (rows.length === 0) {
     listEl.innerHTML = `<div class="ready-empty">${escapeHtml(t("readyItemsEmpty"))}</div>`;
     return;
@@ -46,13 +51,43 @@ function renderReadyItems(items) {
   listEl.innerHTML = rows.map((row) => `<div class="ready-item-row">${escapeHtml(String(row))}</div>`).join("");
 }
 
+function renderReadyItemsCollapse() {
+  const wrapEl = document.getElementById("readyItemsListWrap");
+  const toggleBtn = document.getElementById("readyItemsToggleBtn");
+  if (!wrapEl || !toggleBtn) return;
+  wrapEl.classList.toggle("collapsed", readyItemsCollapsed);
+  toggleBtn.classList.toggle("collapsed", readyItemsCollapsed);
+  toggleBtn.setAttribute(
+    "aria-label",
+    readyItemsCollapsed
+      ? t("readyItemsExpandAria", { count: readyItemsCount })
+      : t("readyItemsCollapseAria", { count: readyItemsCount }),
+  );
+}
+
+function openReadyRunPopup() {
+  const popup = document.getElementById("readyRunPopup");
+  const pre = document.getElementById("readyRunCommandOutput");
+  if (!popup || !pre) return;
+  pre.textContent = "cd /workspace/jeff/Benchmark-Autotest && uv venv .venv.autotest && . .venv.autotest/bin/activate && uv pip install -r requirements.txt && python main.py";
+  popup.classList.remove("hidden");
+}
+
+function closeReadyRunPopup() {
+  const popup = document.getElementById("readyRunPopup");
+  if (!popup) return;
+  popup.classList.add("hidden");
+}
+
 export async function loadReadyItems() {
   try {
     const { ok, status, data } = await requestJson("/api/config/ready-items");
     if (!ok) throw new Error(data.detail || status);
     renderReadyItems(data.items || []);
+    renderReadyItemsCollapse();
   } catch {
     renderReadyItems([]);
+    renderReadyItemsCollapse();
   }
 }
 
@@ -106,11 +141,23 @@ export function initReadyToRunFeature() {
   const testName = getInput("readyTestNameInput");
   const sheetName = getSelect("readySheetNameSelect");
   const platformName = getInput("readyPlatformNameInput");
-  if (!testName || !sheetName || !platformName) return;
+  const toggleBtn = document.getElementById("readyItemsToggleBtn");
+  const runBtn = document.getElementById("readyRunBtn");
+  const closeRunPopupBtn = document.getElementById("closeReadyRunPopupBtn");
+  if (!testName || !sheetName || !platformName || !toggleBtn || !runBtn || !closeRunPopupBtn) return;
 
   testName.addEventListener("input", saveReadyMetaDebounced);
   platformName.addEventListener("input", saveReadyMetaDebounced);
   sheetName.addEventListener("change", () => {
     void saveReadyMetaNow();
   });
+
+  toggleBtn.addEventListener("click", () => {
+    readyItemsCollapsed = !readyItemsCollapsed;
+    renderReadyItemsCollapse();
+  });
+
+  runBtn.addEventListener("click", openReadyRunPopup);
+  closeRunPopupBtn.addEventListener("click", closeReadyRunPopup);
+  renderReadyItemsCollapse();
 }

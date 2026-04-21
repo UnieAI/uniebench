@@ -15,7 +15,30 @@
     </div>
   </div>
   <div class="ready-list-wrap">
-    <div class="ready-list-title" data-i18n="readyItemsTitle">預計測試條目</div>
-    <div id="readyItemsList" class="ready-items-list"></div>
+    <div class="ready-list-header">
+      <button id="readyItemsToggleBtn" class="ready-list-toggle-btn" type="button">
+        <span data-i18n="readyItemsTitle">預計測試條目</span>
+        <span id="readyItemsCountBadge" class="ready-count-badge">0</span>
+      </button>
+    </div>
+    <div id="readyItemsListWrap" class="ready-items-list-wrap collapsed">
+      <div id="readyItemsList" class="ready-items-list"></div>
+    </div>
+  </div>
+  <div class="ready-run-row">
+    <button id="readyRunBtn" class="action danger" data-i18n="btnRunReadyTest">Run</button>
+  </div>
+
+  <div id="readyRunPopup" class="test-popup hidden">
+    <div class="test-popup-card ready-run-popup-card">
+      <div class="test-popup-header">
+        <div class="test-popup-title" data-i18n="readyRunPopupTitle">Run on Host</div>
+        <button id="closeReadyRunPopupBtn" class="action secondary" data-i18n="btnClose">關閉</button>
+      </div>
+      <div class="host-test-guide" data-i18n="readyRunGuideText">
+        請在 host 一行執行下方指令（建立 uv 環境、安裝 requirements、執行 main.py）。
+      </div>
+      <pre id="readyRunCommandOutput" class="host-test-command"></pre>
+    </div>
   </div>
 </section>
