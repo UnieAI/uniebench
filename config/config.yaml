@@ -1,50 +1,83 @@
 autotest:
-    # google worksheet 的工作表名稱
-    name: winston-test-01
-    sheet_name: Benchmark-Pro6000
+  name: benchmark-test-01
+  sheet_name: Benchmark-Pro6000
 server:
-    platform: Pro6000  # 測試平台
-    id: test1       # 使用 default_config.server 底下，對應的 server
-
+  platform: Pro6000
+  id: default
 benchmark:
-    id: test1       # 使用 default_config.benchmark 底下，對應的 benchmark 設定
-
+  id: default
 healthcheck:
-    url: "${server.base_url}:${server.port}/health"
-    timeout: 5
-    max_tries: 100
-    interval: 5.0
-
+  url: ${server.base_url}:${server.port}/health
+  timeout: 5
+  max_tries: 100
+  interval: 5.0
 default_config:
-    server:
-        - id: test1
-          config:
-            container:
-                - path: /home/ubuntu/workspace/jeff/Benchmark-Autotest/services/run_rs.sh            # docker-compose.yml path or shell script path.
-                  service_name: none    # if multiple services in one .yml file, choose one of them
-                  name: vllm-rs-ngram      # test name;  for example, "vllm-with-kernel-optimized-version-2" 
-                  tp_size: 1            # tp size.
-            base_url: http://localhost
-            port: 12470           # which port can I call the api.
-            model_path: /home/ubuntu/models     # 模型路徑
-            model_name: Qwen/Qwen2.5-7B-Instruct   # 模型名稱， 路徑/名稱 會是 model 的具體位置
-            model_id: test    # model_id，呼叫 api 時使用
-    benchmark:
-        - id: test1
-          config:
-            name:
-                - inferencemax-h100             # 目前只能用 inferencemax-h100
-            endpoint_type: completions                 # 可選 chat 或 completions ，注意模型是否支援
-            model_name: ${server.model_name}    # 不用改
-            dataset_path: /workspace/jeff/Benchmark-Autotest/datasets/neural-bridge/rag-dataset-12000/data/train-00000-of-00001-9df3a936e1f63191.parquet # dataset 路徑，移除此欄位的話會使用 random
-            token_lengths:
-                - input_len: none                # 輸入跟輸出的長度，可以一次測試多個
-                  output_len: 1024
-            concurrency:
-                - 1                            # 一次有幾個使用者同時跑，可以一次測試多個
-                - 16
-                - 32
-                - 64
-                - 128
-                - 256
-                - 512
+  server:
+  - id: default
+    config:
+      container:
+      - path: /workspace/jeff/Benchmark-Autotest/services/default/default_script.sh
+        name: default_script
+        tp_size: 1
+        model_name: Qwen/Qwen3-0.6B
+        model_id: qwen3-0.6b
+        base_url: http://localhost
+        port: 12470
+      base_url: 0
+      port: 0
+      model_path: 0
+      model_name: 0
+      model_id: 0
+  benchmark:
+  - id: default
+    config:
+      name:
+      - inferencemax-h100
+      endpoint_type: completions
+      model_name: ${server.model_name}
+      dataset_path: /workspace/jeff/Benchmark-Autotest/datasets/neural-bridge/rag-dataset-12000/data/train-00000-of-00001-9df3a936e1f63191.parquet
+      token_lengths:
+      - input_len: none
+        output_len: 1024
+      concurrency:
+      - 1
+      - 16
+      - 32
+      - 64
+      - 128
+      - 256
+      - 512
+dashboard:
+  scripts:
+    enabled:
+      default/default_script.sh: true
+    metadata:
+      default/default_script.sh:
+        tp_size: '1'
+        model_name: Qwen/Qwen3-0.6B
+        model_id: qwen3-0.6b
+        base_url: http://localhost
+        port: '12470'
+    last_test:
+      default/default_script.sh:
+        status: success
+        tested_at: '2026-04-21T02:56:49Z'
+        detail: ok | /tmp/host_script_test.log
+  global_config:
+    model_path: /home/ubuntu/models
+    model_names:
+    - AngelSlim/Qwen3-32B_eagle3
+    - AngelSlim/Qwen3-8B_eagle3
+    - Qwen/Qwen2.5-7B-Instruct
+    - Qwen/Qwen3-0.6B
+    - Qwen/Qwen3-32B
+    - Qwen/Qwen3-8B
+    - Qwen/Qwen3.5-0.8B
+    - Qwen/Qwen3.5-27B
+    - Qwen/Qwen3.5-9B
+    - deepseek-ai/DeepSeek-OCR-2
+    - google/gemma-4-E4B-it
+    - meta-llama/Llama-3.3-70B-Instruct
+    - mistralai/Voxtral-Mini-4B-Realtime-2602
+    - z-lab/Qwen3-8B-DFlash-b16
+    default_base_url: http://localhost
