@@ -32,6 +32,14 @@ class ScriptHostTestBuildPayload(BaseModel):
     endpoint_url: str
 
 
+class ScriptHostTestResultPayload(BaseModel):
+    status: str
+    reason: str = ""
+    log_file: str = ""
+    endpoint: str = ""
+    script: str = ""
+
+
 class ScriptEnabledPayload(BaseModel):
     enabled: bool
 

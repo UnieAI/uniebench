@@ -943,11 +943,16 @@ function closeHostTestPopup() {
   hideHostTestPopup();
 }
 
-function applyHostTestResult() {
+async function applyHostTestResult() {
+  if (!selectedScriptPath) {
+    setStatus("scriptsStatus", t("statusScriptNeedSelect"), "err");
+    return;
+  }
   const resultInput = document.getElementById("hostTestResultInput");
   if (!(resultInput instanceof HTMLTextAreaElement)) return;
+  let decoded;
   try {
-    const decoded = decodeHostResult(resultInput.value);
+    decoded = decodeHostResult(resultInput.value);
     hostTestDecodedResult = decoded;
     hostTestResultText = [
       `HOST_TEST_RESULT status=${decoded.status}`,
@@ -970,6 +975,29 @@ function applyHostTestResult() {
     renderHostTestPopup();
     return;
   }
+
+  try {
+    const statusText = decoded.status === "PASS" ? "success" : "fail";
+    const { ok, status, data } = await requestJson(`/api/scripts/${encodeScriptPath(selectedScriptPath)}/test/host-result`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status: statusText,
+        reason: decoded.reason || "",
+        log_file: decoded.log_file || "",
+        endpoint: decoded.endpoint || "",
+        script: decoded.script || "",
+      }),
+    });
+    if (!ok) {
+      throw new Error(data.detail || status);
+    }
+    await refreshScripts(selectedScriptPath);
+  } catch (err) {
+    setStatus("scriptsStatus", t("statusHostTestResultSaveFail", { reason: err }), "err");
+    return;
+  }
+
   renderHostTestPopup();
   setStatus("scriptsStatus", t("statusHostTestResultSaved"), "ok");
 }

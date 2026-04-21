@@ -5,6 +5,7 @@ from dashboard.backend.schemas import (
     ScriptCreatePayload,
     ScriptEnabledPayload,
     ScriptHostTestBuildPayload,
+    ScriptHostTestResultPayload,
     ScriptMovePayload,
     ScriptPayload,
     ScriptTestStartPayload,
@@ -25,6 +26,7 @@ from dashboard.backend.services.scripts_service import (
     read_script,
     resolve_script_path,
     set_script_enabled,
+    set_script_last_test_result,
     set_script_metadata,
     sync_default_config_servers,
     sync_enabled_map,
@@ -54,7 +56,7 @@ def get_scripts() -> dict:
             "group": group,
             "enabled": bool(enabled_map.get(path, False)),
             "metadata": get_script_metadata(path, CONFIG_PATH),
-            "last_test": get_script_last_test_result(path),
+            "last_test": get_script_last_test_result(path, CONFIG_PATH),
         }
         scripts.append(item)
         group_map.setdefault(group, []).append(item)
@@ -117,6 +119,38 @@ def script_test_host_build(script_path: str, payload: ScriptHostTestBuildPayload
     return built
 
 
+@router.post("/{script_path:path}/test/host-result")
+def script_test_host_result(script_path: str, payload: ScriptHostTestResultPayload) -> dict:
+    script_dir = pick_scripts_dir(SCRIPTS_DIR_CANDIDATES, create=False)
+    try:
+        _, normalized_path = resolve_script_path(script_dir, script_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    detail_parts = []
+    reason = str(payload.reason or "").strip()
+    log_file = str(payload.log_file or "").strip()
+    if reason:
+        detail_parts.append(reason)
+    if log_file:
+        detail_parts.append(log_file)
+    detail = " | ".join(detail_parts)
+
+    entry = set_script_last_test_result(
+        script_rel_path=normalized_path,
+        status=payload.status,
+        detail=detail,
+        config_path=CONFIG_PATH,
+        lock=WRITE_LOCK,
+    )
+    return {
+        "saved": True,
+        "script_path": normalized_path,
+        "last_test": entry,
+        "time": now_iso(),
+    }
+
+
 @router.post("/move")
 def script_move(payload: ScriptMovePayload) -> dict:
     script_dir = pick_scripts_dir(SCRIPTS_DIR_CANDIDATES, create=True)
@@ -135,7 +169,7 @@ def script_move(payload: ScriptMovePayload) -> dict:
 
     move_script_enabled_state(source_rel, target_rel, CONFIG_PATH, WRITE_LOCK)
     move_script_metadata(source_rel, target_rel, CONFIG_PATH, WRITE_LOCK)
-    move_script_test_result(source_rel, target_rel)
+    move_script_test_result(source_rel, target_rel, CONFIG_PATH, WRITE_LOCK)
     return {
         "moved": True,
         "from": source_rel,

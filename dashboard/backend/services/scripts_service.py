@@ -37,6 +37,7 @@ CONFIG_DASHBOARD_KEY = "dashboard"
 CONFIG_SCRIPTS_KEY = "scripts"
 CONFIG_ENABLED_KEY = "enabled"
 CONFIG_METADATA_KEY = "metadata"
+CONFIG_LAST_TEST_KEY = "last_test"
 CONFIG_GLOBAL_CONFIG_KEY = "global_config"
 CONFIG_MODEL_PATH_KEY = "model_path"
 CONFIG_MODEL_NAMES_KEY = "model_names"
@@ -388,6 +389,66 @@ def _normalize_script_metadata(raw: Any) -> Dict[str, str]:
         value = raw.get(field, "")
         normalized[field] = str(value).strip() if value is not None else ""
     return normalized
+
+
+def _normalize_last_test_status(raw_status: Any) -> str:
+    text = str(raw_status or "").strip().lower()
+    if text in {"success", "pass", "passed"}:
+        return "success"
+    if text in {"fail", "failed", "error"}:
+        return "fail"
+    return "untested"
+
+
+def _normalize_last_test_entry(raw: Any) -> Dict[str, str]:
+    if not isinstance(raw, dict):
+        return {"status": "untested", "tested_at": "", "detail": ""}
+    return {
+        "status": _normalize_last_test_status(raw.get("status")),
+        "tested_at": str(raw.get("tested_at") or "").strip(),
+        "detail": str(raw.get("detail") or "").strip(),
+    }
+
+
+def _read_last_test_map(config_path: Path) -> Dict[str, Dict[str, str]]:
+    data = _read_config_dict(config_path)
+    dashboard = data.get(CONFIG_DASHBOARD_KEY)
+    if not isinstance(dashboard, dict):
+        return {}
+    scripts = dashboard.get(CONFIG_SCRIPTS_KEY)
+    if not isinstance(scripts, dict):
+        return {}
+    last_test = scripts.get(CONFIG_LAST_TEST_KEY)
+    if not isinstance(last_test, dict):
+        return {}
+
+    normalized: Dict[str, Dict[str, str]] = {}
+    for key, value in last_test.items():
+        try:
+            normalized_key = _normalize_rel_script_path(str(key))
+        except ValueError:
+            continue
+        normalized[normalized_key] = _normalize_last_test_entry(value)
+    return normalized
+
+
+def _write_last_test_map(config_path: Path, lock: threading.Lock, last_test_map: Dict[str, Dict[str, str]]) -> None:
+    with lock:
+        data = _read_config_dict(config_path)
+        dashboard = data.get(CONFIG_DASHBOARD_KEY)
+        if not isinstance(dashboard, dict):
+            dashboard = {}
+            data[CONFIG_DASHBOARD_KEY] = dashboard
+        scripts = dashboard.get(CONFIG_SCRIPTS_KEY)
+        if not isinstance(scripts, dict):
+            scripts = {}
+            dashboard[CONFIG_SCRIPTS_KEY] = scripts
+        scripts[CONFIG_LAST_TEST_KEY] = dict(sorted(last_test_map.items(), key=lambda kv: kv[0]))
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
 
 
 def _read_metadata_map(config_path: Path) -> Dict[str, Dict[str, str]]:
@@ -887,22 +948,72 @@ def _record_script_result(script_rel_path: str, overall_status: str, detail: str
         }
 
 
-def get_script_last_test_result(script_rel_path: str) -> Dict[str, str]:
+def get_script_last_test_result(script_rel_path: str, config_path: Optional[Path] = None) -> Dict[str, str]:
+    normalized_path = _normalize_rel_script_path(script_rel_path)
+    persisted_result: Optional[Dict[str, str]] = None
+    if config_path is not None:
+        persisted_map = _read_last_test_map(config_path)
+        if normalized_path in persisted_map:
+            persisted_result = _normalize_last_test_entry(persisted_map[normalized_path])
+
+    memory_result: Optional[Dict[str, str]] = None
     with _SCRIPT_TEST_LOCK:
-        result = _SCRIPT_TEST_RESULTS.get(script_rel_path)
-        if result is None:
-            return {"status": "untested", "tested_at": "", "detail": ""}
-        return {
-            "status": str(result.get("status") or STATUS_FAIL),
-            "tested_at": str(result.get("tested_at") or ""),
-            "detail": str(result.get("detail") or ""),
-        }
+        result = _SCRIPT_TEST_RESULTS.get(normalized_path)
+        if result is not None:
+            memory_result = {
+                "status": _normalize_last_test_status(result.get("status")),
+                "tested_at": str(result.get("tested_at") or ""),
+                "detail": str(result.get("detail") or ""),
+            }
+
+    if memory_result is None and persisted_result is None:
+        return {"status": "untested", "tested_at": "", "detail": ""}
+    if memory_result is None:
+        return persisted_result or {"status": "untested", "tested_at": "", "detail": ""}
+    if persisted_result is None:
+        return memory_result
+
+    if memory_result.get("tested_at", "") >= persisted_result.get("tested_at", ""):
+        return memory_result
+    return persisted_result
 
 
-def move_script_test_result(source_rel_path: str, target_rel_path: str) -> None:
+def set_script_last_test_result(
+    script_rel_path: str,
+    status: str,
+    detail: str,
+    config_path: Path,
+    lock: threading.Lock,
+    tested_at: Optional[str] = None,
+) -> Dict[str, str]:
+    normalized_path = _normalize_rel_script_path(script_rel_path)
+    normalized_status = _normalize_last_test_status(status)
+    ts = str(tested_at or "").strip() or _iso_now()
+    entry = {
+        "status": normalized_status,
+        "tested_at": ts,
+        "detail": str(detail or "").strip(),
+    }
     with _SCRIPT_TEST_LOCK:
-        if source_rel_path in _SCRIPT_TEST_RESULTS:
-            _SCRIPT_TEST_RESULTS[target_rel_path] = _SCRIPT_TEST_RESULTS.pop(source_rel_path)
+        _SCRIPT_TEST_RESULTS[normalized_path] = dict(entry)
+
+    last_test_map = _read_last_test_map(config_path)
+    last_test_map[normalized_path] = dict(entry)
+    _write_last_test_map(config_path, lock, last_test_map)
+    return entry
+
+
+def move_script_test_result(source_rel_path: str, target_rel_path: str, config_path: Path, lock: threading.Lock) -> None:
+    normalized_source = _normalize_rel_script_path(source_rel_path)
+    normalized_target = _normalize_rel_script_path(target_rel_path)
+    with _SCRIPT_TEST_LOCK:
+        if normalized_source in _SCRIPT_TEST_RESULTS:
+            _SCRIPT_TEST_RESULTS[normalized_target] = _SCRIPT_TEST_RESULTS.pop(normalized_source)
+
+    last_test_map = _read_last_test_map(config_path)
+    if normalized_source in last_test_map:
+        last_test_map[normalized_target] = last_test_map.pop(normalized_source)
+        _write_last_test_map(config_path, lock, last_test_map)
 
 
 def _append_log(message: str) -> None:
