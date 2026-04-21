@@ -22,6 +22,13 @@ let hostTestCommand = "";
 let hostTestDecodedResult = null;
 let scriptAutoSaveTimer = null;
 let isScriptSaving = false;
+let suspendScriptAutoSave = false;
+
+function delay(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
 
 function defaultScriptTemplate() {
   return "#!/bin/bash\nset -euo pipefail\n\n";
@@ -400,15 +407,40 @@ function updateScriptEditorHint() {
   }
 }
 
-function autoDetectAllScriptMeta() {
+async function autoDetectAllScriptMeta() {
   const detected = detectMetaFromScriptContent(getScriptEditorContent());
-  selectedScriptMeta = normalizeScriptMeta(detected);
-  renderScriptMetaForm();
-  setStatus("scriptsStatus", t("statusScriptAutoDetectAppliedAll"), "ok");
+  const fields = [
+    { id: "scriptMetaTpSize", value: String(detected.tp_size || "") },
+    { id: "scriptMetaModelName", value: String(detected.model_name || "") },
+    { id: "scriptMetaModelId", value: String(detected.model_id || "") },
+    { id: "scriptMetaBaseUrl", value: String(detected.base_url || "") },
+    { id: "scriptMetaPort", value: String(detected.port || "") },
+  ];
+
+  suspendScriptAutoSave = true;
+  try {
+    fields.forEach(({ id }) => {
+      const input = getMetaInput(id);
+      if (input) input.value = "";
+    });
+
+    await delay(200);
+
+    for (const field of fields) {
+      const input = getMetaInput(field.id);
+      if (input) input.value = field.value;
+      await delay(100);
+    }
+    selectedScriptMeta = normalizeScriptMeta(detected);
+    setStatus("scriptsStatus", t("statusScriptAutoDetectAppliedAll"), "ok");
+  } finally {
+    suspendScriptAutoSave = false;
+  }
   scheduleScriptAutoSave();
 }
 
 function scheduleScriptAutoSave() {
+  if (suspendScriptAutoSave) return;
   if (!selectedScriptPath) return;
   if (scriptAutoSaveTimer !== null) {
     window.clearTimeout(scriptAutoSaveTimer);

@@ -2,9 +2,26 @@ import { requestJson } from "../core/api.js";
 import { t } from "../core/i18n.js";
 import { formatMemText, memPct, num, pct, setStatus, shortenGpuName } from "../core/ui.js";
 
+const FLOATING_COLLAPSED_KEY = "dashboard_floating_monitor_collapsed";
+
 let floatingEnabled = false;
 let floatingCollapsed = false;
 let lastMonitorData = null;
+
+try {
+  floatingCollapsed = localStorage.getItem(FLOATING_COLLAPSED_KEY) === "1";
+} catch {
+  floatingCollapsed = false;
+}
+
+function setFloatingCollapsed(value) {
+  floatingCollapsed = Boolean(value);
+  try {
+    localStorage.setItem(FLOATING_COLLAPSED_KEY, floatingCollapsed ? "1" : "0");
+  } catch {
+    // ignore storage errors
+  }
+}
 
 function setGpuBodyMessage(messageKey) {
   const gpuBody = document.getElementById("gpuBody");
@@ -108,7 +125,7 @@ function renderFloatingMonitor(data) {
     const toggleBtn = document.getElementById("floatingMonitorToggleBtn");
     if (toggleBtn) {
       toggleBtn.addEventListener("click", () => {
-        floatingCollapsed = !floatingCollapsed;
+        setFloatingCollapsed(!floatingCollapsed);
         renderFloatingMonitor(lastMonitorData);
       });
     }
@@ -122,7 +139,7 @@ function renderFloatingMonitor(data) {
     const toggleBtn = document.getElementById("floatingMonitorToggleBtn");
     if (toggleBtn) {
       toggleBtn.addEventListener("click", () => {
-        floatingCollapsed = !floatingCollapsed;
+        setFloatingCollapsed(!floatingCollapsed);
         renderFloatingMonitor(lastMonitorData);
       });
     }
@@ -147,7 +164,7 @@ function renderFloatingMonitor(data) {
   const toggleBtn = document.getElementById("floatingMonitorToggleBtn");
   if (toggleBtn) {
     toggleBtn.addEventListener("click", () => {
-      floatingCollapsed = !floatingCollapsed;
+      setFloatingCollapsed(!floatingCollapsed);
       renderFloatingMonitor(lastMonitorData);
     });
   }
