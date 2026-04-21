@@ -5,4 +5,7 @@ config/service_account.json
 *env/
 benchmark/datasets/
 .runtime_pids/
-services
+services/*
+!services/default/
+services/default/*
+!services/default/default_script.sh
