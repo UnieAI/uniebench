@@ -36,7 +36,7 @@ default_config:
       - inferencemax-h100
       endpoint_type: completions
       model_name: ${server.model_name}
-      dataset_path: /workspace/jeff/Benchmark-Autotest/datasets/neural-bridge/rag-dataset-12000/data/train-00000-of-00001-9df3a936e1f63191.parquet
+      dataset_path: ./datasets/neural-bridge/rag-dataset-12000/data/train-00000-of-00001-9df3a936e1f63191.parquet
       token_lengths:
       - input_len: none
         output_len: 1024
