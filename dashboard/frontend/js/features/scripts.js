@@ -11,7 +11,7 @@ let selectedScriptName = "";
 let selectedScriptGroup = "default";
 let scriptsDir = "";
 let runtimeServerGroupId = "";
-let selectedScriptMeta = { tp_size: "", model_name: "", model_id: "", base_url: "", port: "" };
+let selectedScriptMeta = { tp_size: "", model_id: "", model_name: "", model_path: "", base_url: "", port: "" };
 let scriptModelNameOptions = [];
 
 let testStatusPollTimer = null;
@@ -68,8 +68,9 @@ function normalizeScriptMeta(raw) {
   const data = raw && typeof raw === "object" ? raw : {};
   return {
     tp_size: String(data.tp_size || "").trim(),
-    model_name: String(data.model_name || "").trim(),
     model_id: String(data.model_id || "").trim(),
+    model_name: String(data.model_name || "").trim(),
+    model_path: String(data.model_path || "").trim(),
     base_url: String(data.base_url || "").trim(),
     port: String(data.port || "").trim(),
   };
@@ -82,16 +83,18 @@ function getMetaInput(id) {
 
 function renderScriptMetaForm() {
   const tpEl = getMetaInput("scriptMetaTpSize");
-  const modelNameEl = getMetaInput("scriptMetaModelName");
   const modelIdEl = getMetaInput("scriptMetaModelId");
+  const modelNameEl = getMetaInput("scriptMetaModelName");
+  const modelPathEl = getMetaInput("scriptMetaModelPath");
   const baseUrlEl = getMetaInput("scriptMetaBaseUrl");
   const portEl = getMetaInput("scriptMetaPort");
-  if (!tpEl || !modelNameEl || !modelIdEl || !baseUrlEl || !portEl) return;
+  if (!tpEl || !modelIdEl || !modelNameEl || !modelPathEl || !baseUrlEl || !portEl) return;
 
   const meta = normalizeScriptMeta(selectedScriptMeta);
   tpEl.value = meta.tp_size;
-  modelNameEl.value = meta.model_name;
   modelIdEl.value = meta.model_id;
+  modelNameEl.value = meta.model_name;
+  modelPathEl.value = meta.model_path;
   baseUrlEl.value = meta.base_url;
   portEl.value = meta.port;
 }
@@ -99,8 +102,9 @@ function renderScriptMetaForm() {
 function collectScriptMetaForm() {
   return normalizeScriptMeta({
     tp_size: getMetaInput("scriptMetaTpSize")?.value,
-    model_name: getMetaInput("scriptMetaModelName")?.value,
     model_id: getMetaInput("scriptMetaModelId")?.value,
+    model_name: getMetaInput("scriptMetaModelName")?.value,
+    model_path: getMetaInput("scriptMetaModelPath")?.value,
     base_url: getMetaInput("scriptMetaBaseUrl")?.value,
     port: getMetaInput("scriptMetaPort")?.value,
   });
@@ -157,11 +161,24 @@ function detectMetaFromScriptContent(scriptContent) {
 
   return {
     tp_size: tpSize || "1",
-    model_name: extractModelNameFromServeTarget(serveTarget),
     model_id: servedModelName || serveTarget,
+    model_name: extractModelNameFromServeTarget(serveTarget),
+    model_path: "",
     base_url: "http://localhost",
     port: port || "8000",
   };
+}
+
+async function detectGlobalModelPath() {
+  try {
+    const { ok, status, data } = await requestJson("/api/global-config");
+    if (!ok) {
+      throw new Error(data.detail || status);
+    }
+    return String(data.model_path || "").trim();
+  } catch {
+    return "";
+  }
 }
 
 function renderScriptModelNameOptions() {
@@ -409,10 +426,12 @@ function updateScriptEditorHint() {
 
 async function autoDetectAllScriptMeta() {
   const detected = detectMetaFromScriptContent(getScriptEditorContent());
+  detected.model_path = await detectGlobalModelPath();
   const fields = [
     { id: "scriptMetaTpSize", value: String(detected.tp_size || "") },
-    { id: "scriptMetaModelName", value: String(detected.model_name || "") },
     { id: "scriptMetaModelId", value: String(detected.model_id || "") },
+    { id: "scriptMetaModelName", value: String(detected.model_name || "") },
+    { id: "scriptMetaModelPath", value: String(detected.model_path || "") },
     { id: "scriptMetaBaseUrl", value: String(detected.base_url || "") },
     { id: "scriptMetaPort", value: String(detected.port || "") },
   ];
@@ -1313,12 +1332,13 @@ export function initScriptsFeature() {
   const runtimeServerSelect = document.getElementById("runtimeServerGroupSelect");
   const scriptEditor = document.getElementById("scriptEditor");
   const scriptMetaTpSize = getMetaInput("scriptMetaTpSize");
-  const scriptMetaModelName = getMetaInput("scriptMetaModelName");
   const scriptMetaModelId = getMetaInput("scriptMetaModelId");
+  const scriptMetaModelName = getMetaInput("scriptMetaModelName");
+  const scriptMetaModelPath = getMetaInput("scriptMetaModelPath");
   const scriptMetaBaseUrl = getMetaInput("scriptMetaBaseUrl");
   const scriptMetaPort = getMetaInput("scriptMetaPort");
 
-  if (!refreshBtn || !openCreateBtn || !openMoveBtn || !deleteBtn || !createBtn || !moveBtn || !cancelCreateBtn || !cancelMoveBtn || !testBtn || !testInHostBtn || !autoDetectBtn || !popupStartBtn || !popupStopBtn || !closePopupBtn || !closeHostPopupBtn || !hostEndpointInput || !hostApplyResultBtn || !endpointInput || !newScriptInput || !runtimeServerSelect || !(scriptEditor instanceof HTMLTextAreaElement) || !scriptMetaTpSize || !scriptMetaModelName || !scriptMetaModelId || !scriptMetaBaseUrl || !scriptMetaPort) {
+  if (!refreshBtn || !openCreateBtn || !openMoveBtn || !deleteBtn || !createBtn || !moveBtn || !cancelCreateBtn || !cancelMoveBtn || !testBtn || !testInHostBtn || !autoDetectBtn || !popupStartBtn || !popupStopBtn || !closePopupBtn || !closeHostPopupBtn || !hostEndpointInput || !hostApplyResultBtn || !endpointInput || !newScriptInput || !runtimeServerSelect || !(scriptEditor instanceof HTMLTextAreaElement) || !scriptMetaTpSize || !scriptMetaModelId || !scriptMetaModelName || !scriptMetaModelPath || !scriptMetaBaseUrl || !scriptMetaPort) {
     return;
   }
 
@@ -1350,8 +1370,9 @@ export function initScriptsFeature() {
   autoDetectBtn.addEventListener("click", autoDetectAllScriptMeta);
   scriptEditor.addEventListener("input", scheduleScriptAutoSave);
   scriptMetaTpSize.addEventListener("input", scheduleScriptAutoSave);
-  scriptMetaModelName.addEventListener("input", scheduleScriptAutoSave);
   scriptMetaModelId.addEventListener("input", scheduleScriptAutoSave);
+  scriptMetaModelName.addEventListener("input", scheduleScriptAutoSave);
+  scriptMetaModelPath.addEventListener("input", scheduleScriptAutoSave);
   scriptMetaBaseUrl.addEventListener("input", scheduleScriptAutoSave);
   scriptMetaPort.addEventListener("input", scheduleScriptAutoSave);
 

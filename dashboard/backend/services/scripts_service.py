@@ -45,7 +45,7 @@ CONFIG_DEFAULT_BASE_URL_KEY = "default_base_url"
 DEFAULT_MODEL_PATH = "/home/ubuntu/models"
 DEFAULT_BASE_URL = "http://localhost"
 
-SCRIPT_META_FIELDS = ("tp_size", "model_name", "model_id", "base_url", "port")
+SCRIPT_META_FIELDS = ("tp_size", "model_id", "model_name", "model_path", "base_url", "port")
 CONFIG_DEFAULT_CONFIG_KEY = "default_config"
 CONFIG_SERVER_KEY = "server"
 CONFIG_CONFIG_KEY = "config"
@@ -638,8 +638,9 @@ def sync_default_config_server_entry(
         "path": script_path_text,
         "name": str(script_name or "").strip() or script_path.name,
         "tp_size": _to_int_or_zero(meta["tp_size"]),
-        "model_name": meta["model_name"],
         "model_id": meta["model_id"],
+        "model_name": meta["model_name"],
+        "model_path": meta["model_path"],
         "base_url": meta["base_url"],
         "port": _to_int_or_zero(meta["port"]),
     }
@@ -745,8 +746,9 @@ def sync_default_config_servers(script_dir: Path, config_path: Path, lock: threa
             "path": str(resolved_path),
             "name": _script_name_without_ext(name) or _script_name_without_ext(resolved_path.name),
             "tp_size": _to_int_or_zero(meta["tp_size"]),
-            "model_name": meta["model_name"],
             "model_id": meta["model_id"],
+            "model_name": meta["model_name"],
+            "model_path": meta["model_path"],
             "base_url": meta["base_url"],
             "port": _to_int_or_zero(meta["port"]),
         })

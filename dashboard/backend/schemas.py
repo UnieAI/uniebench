@@ -7,8 +7,9 @@ class ConfigPayload(BaseModel):
 
 class ScriptMetadataPayload(BaseModel):
     tp_size: str = ""
-    model_name: str = ""
     model_id: str = ""
+    model_name: str = ""
+    model_path: str = ""
     base_url: str = ""
     port: str = ""
 
