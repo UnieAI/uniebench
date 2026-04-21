@@ -1131,6 +1131,7 @@ async function applyHostTestResult() {
 
   renderHostTestPopup();
   setStatus("scriptsStatus", t("statusHostTestResultSaved"), "ok");
+  closeHostTestPopup();
 }
 
 async function buildHostTestScriptFile() {
