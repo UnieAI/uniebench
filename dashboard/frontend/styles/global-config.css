@@ -56,6 +56,40 @@
   flex: 1;
 }
 
+.global-service-account-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.global-service-account-header label {
+  margin-bottom: 0;
+}
+
+.global-status-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.global-status-chip.uploaded {
+  color: #166534;
+  background: #dcfce7;
+  border-color: #86efac;
+}
+
+.global-status-chip.missing {
+  color: #991b1b;
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
 .global-upload-row {
   display: flex;
   gap: 8px;

@@ -47,7 +47,23 @@ function setValue(id, value) {
 }
 
 function renderServiceAccountStatus(exists) {
-  setValue("globalServiceAccountStatus", exists ? t("globalServiceAccountExists") : t("globalServiceAccountMissing"));
+  const chip = document.getElementById("globalServiceAccountChip");
+  if (!chip) return;
+  chip.textContent = exists ? t("globalServiceAccountExists") : t("globalServiceAccountMissing");
+  chip.classList.toggle("uploaded", Boolean(exists));
+  chip.classList.toggle("missing", !exists);
+}
+
+async function refreshServiceAccountStatus() {
+  try {
+    const { ok, status, data } = await requestJson("/api/global-config");
+    if (!ok) {
+      throw new Error(data.detail || status);
+    }
+    renderServiceAccountStatus(Boolean(data.service_account_json_exists));
+  } catch {
+    renderServiceAccountStatus(false);
+  }
 }
 
 function onAddModelName() {
@@ -137,7 +153,7 @@ async function uploadServiceAccountJson() {
     if (!res.ok) {
       throw new Error(data.detail || res.status);
     }
-    renderServiceAccountStatus(Boolean(data.service_account_json_exists));
+    await refreshServiceAccountStatus();
     fileInput.value = "";
     setStatus("globalConfigStatus", t("statusServiceAccountUploaded"), "ok");
   } catch (err) {
@@ -205,4 +221,5 @@ export function initGlobalConfigFeature() {
     }
   });
   list.addEventListener("click", onModelListClick);
+  void refreshServiceAccountStatus();
 }

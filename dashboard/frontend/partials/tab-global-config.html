@@ -16,8 +16,10 @@
     </div>
 
     <div class="global-card">
-      <label for="globalServiceAccountStatus" data-i18n="globalServiceAccountStatusLabel">service_account.json</label>
-      <input id="globalServiceAccountStatus" type="text" readonly />
+      <div class="global-service-account-header">
+        <label data-i18n="globalServiceAccountStatusLabel">service_account.json</label>
+        <span id="globalServiceAccountChip" class="global-status-chip missing">未上傳</span>
+      </div>
       <div class="global-upload-row">
         <input id="globalServiceAccountFile" type="file" accept=".json,application/json" />
         <button id="uploadServiceAccountBtn" class="action info" data-i18n="btnUploadServiceAccount">上傳</button>
