@@ -39,6 +39,7 @@ class ComposeInfo:
     service_name: str
     host_port: int
     tokenizer: str
+    served_model_name: str | None = None
 
 
 def run_cmd(
@@ -203,6 +204,31 @@ def find_model_path(command: str | list[str] | None) -> str | None:
     return None
 
 
+def find_served_model_name(command: str | list[str] | None) -> str | None:
+    if command is None:
+        return None
+    if isinstance(command, list):
+        tokens: list[str] = []
+        for part in command:
+            part_str = str(part)
+            try:
+                tokens.extend(shlex.split(part_str))
+            except ValueError:
+                tokens.append(part_str)
+    else:
+        try:
+            tokens = shlex.split(command)
+        except ValueError:
+            tokens = command.split()
+
+    for i, token in enumerate(tokens):
+        if token == "--served-model-name" and i + 1 < len(tokens):
+            return tokens[i + 1]
+        if token.startswith("--served-model-name="):
+            return token.split("=", 1)[1]
+    return None
+
+
 def find_host_port(ports: object) -> int | None:
     if not isinstance(ports, list):
         return None
@@ -237,6 +263,7 @@ def parse_compose_with_docker(compose_file: Path, root: Path) -> ComposeInfo:
     service = services[service_name]
     host_port = find_host_port(service.get("ports"))
     tokenizer = find_model_path(service.get("command"))
+    served_model_name = find_served_model_name(service.get("command"))
 
     if host_port is None:
         raise RuntimeError(f"Unable to extract host port from {compose_file}")
@@ -248,6 +275,7 @@ def parse_compose_with_docker(compose_file: Path, root: Path) -> ComposeInfo:
         service_name=service_name,
         host_port=host_port,
         tokenizer=tokenizer,
+        served_model_name=served_model_name,
     )
 
 
@@ -273,12 +301,19 @@ def parse_compose_fallback(compose_file: Path) -> ComposeInfo:
         if not vllm_match:
             raise RuntimeError(f"Unable to extract model path from {compose_file}")
         tokenizer = vllm_match.group(1)
+    served_model_match = re.search(
+        r"--served-model-name(?:=|\s+)([^\s\"']+)", content
+    )
+    served_model_name = (
+        served_model_match.group(1) if served_model_match else None
+    )
 
     return ComposeInfo(
         compose_file=compose_file,
         service_name=service_name,
         host_port=host_port,
         tokenizer=tokenizer,
+        served_model_name=served_model_name,
     )
 
 
@@ -315,44 +350,45 @@ def run_benchmark_for_concurrency(
     benchmark_script: Path,
     dataset_path: str,
     result_dir: Path,
-    model_name: str,
+    args: argparse.Namespace,
     info: ComposeInfo,
     concurrency: int,
-    prompts_factor: int,
-    seed: int,
-    python_bin: str,
 ) -> None:
-    dataset_name = infer_dataset_name(dataset_path)
+    dataset_name = args.dataset_name or infer_dataset_name(dataset_path)
+    tokenizer = args.tokenizer or info.tokenizer
+    model_name = args.model_name or tokenizer
+    served_model_name = args.served_model_name or info.served_model_name
     if dataset_name == "sharegpt":
         dataset_path_str = str(Path(dataset_path).expanduser().resolve())
     else:
         dataset_path_str = dataset_path
 
     result_filename = f"{info.service_name}.{concurrency}.json"
+    num_prompts = args.num_prompts
+    if num_prompts is None:
+        num_prompts = concurrency * args.prompts_factor
+
     cmd = [
-        python_bin,
+        args.python_bin,
         str(benchmark_script),
+        "--backend",
+        args.backend,
         "--model",
         model_name,
-        "--backend",
-        "openai",
         "--base-url",
         f"http://0.0.0.0:{info.host_port}",
+        "--endpoint",
+        args.endpoint,
         "--tokenizer",
-        info.tokenizer,
+        tokenizer,
         "--dataset-name",
         dataset_name,
         "--dataset-path",
         dataset_path_str,
         "--num-prompts",
-        str(concurrency * prompts_factor),
+        str(num_prompts),
         "--seed",
-        str(seed),
-        "--max-concurrency",
-        str(concurrency),
-        "--request-rate",
-        "inf",
-        "--ignore-eos",
+        str(args.seed),
         "--save-result",
         "--percentile-metrics",
         "ttft,tpot,itl,e2el",
@@ -361,8 +397,23 @@ def run_benchmark_for_concurrency(
         "--result-filename",
         result_filename,
     ]
+    if served_model_name:
+        cmd.extend(["--served-model-name", served_model_name])
+    if args.trust_remote_code:
+        cmd.append("--trust-remote-code")
+    cmd.extend(["--max-concurrency", str(concurrency), "--request-rate", "inf"])
+    if args.backend != "openai-audio":
+        cmd.append("--ignore-eos")
+
     if dataset_name == "hf":
-        cmd.extend(["--hf-split", "train", "--hf-output-len", "1024"])
+        if args.hf_subset:
+            cmd.extend(["--hf-subset", args.hf_subset])
+        if args.hf_split:
+            cmd.extend(["--hf-split", args.hf_split])
+        if args.hf_output_len is not None:
+            cmd.extend(["--hf-output-len", str(args.hf_output_len)])
+        elif args.backend != "openai-audio":
+            cmd.extend(["--hf-output-len", "1024"])
     else:
         cmd.extend(["--sharegpt-output-len", "1024"])
 
@@ -493,11 +544,22 @@ def configure_argparse() -> argparse.ArgumentParser:
         default=str(root / "data/ShareGPT_V3_unfiltered_cleaned_split.json"),
     )
     parser.add_argument(
+        "--dataset-name",
+        default=None,
+        help="Benchmark dataset name. Defaults to auto-infer from --dataset-path.",
+    )
+    parser.add_argument("--hf-subset", default=None)
+    parser.add_argument("--hf-split", default="train")
+    parser.add_argument("--hf-output-len", type=int, default=None)
+    parser.add_argument(
         "--result-dir",
         type=Path,
         default=root / "results",
     )
-    parser.add_argument("--model-name", default="test")
+    parser.add_argument("--model-name", default=None)
+    parser.add_argument("--served-model-name", default=None)
+    parser.add_argument("--backend", default="openai")
+    parser.add_argument("--endpoint", default="/v1/completions")
     parser.add_argument("--python-bin", default="python3")
     parser.add_argument(
         "--service-name",
@@ -535,11 +597,22 @@ def configure_argparse() -> argparse.ArgumentParser:
         help="num-prompts = concurrency * prompts-factor",
     )
     parser.add_argument(
+        "--num-prompts",
+        type=int,
+        default=None,
+        help="Override prompt count per benchmark case.",
+    )
+    parser.add_argument(
         "--concurrency",
         default="1,16,32,64,128,256,512",
         help="Comma-separated concurrency values.",
     )
     parser.add_argument("--seed", type=int, default=0, help="Random seed. Default: 0.")
+    parser.add_argument(
+        "--trust-remote-code",
+        action="store_true",
+        help="Pass --trust-remote-code through to benchmark_serving.py.",
+    )
     parser.add_argument(
         "--with-container",
         action="store_true",
@@ -599,6 +672,9 @@ def main() -> int:
     LOG.info("[info] root: %s", root)
     LOG.info("[info] service-dir: %s", service_dir)
     LOG.info("[info] benchmark-script: %s", benchmark_script)
+    LOG.info("[info] backend: %s", args.backend)
+    LOG.info("[info] endpoint: %s", args.endpoint)
+    LOG.info("[info] dataset-name: %s", args.dataset_name or infer_dataset_name(dataset_path))
     LOG.info("[info] dataset-path: %s", dataset_path)
     LOG.info("[info] result-dir: %s", result_dir)
     LOG.info("[info] concurrency: %s", concurrency_values)
@@ -612,19 +688,25 @@ def main() -> int:
     if args.with_container:
         if args.port is None:
             raise RuntimeError("--port is required when --with-container is set")
+        resolved_tokenizer = args.tokenizer or args.model_name
+        if resolved_tokenizer is None:
+            raise RuntimeError(
+                "--tokenizer or --model-name is required when --with-container is set"
+            )
         compose_infos.append(
             ComposeInfo(
                 compose_file=Path("with-container"),
                 service_name=args.service_name,
                 host_port=args.port,
-                tokenizer=args.tokenizer or args.model_name,
+                tokenizer=resolved_tokenizer,
+                served_model_name=args.served_model_name,
             )
         )
         LOG.info(
             "[info] direct with-container mode: service=%s port=%s tokenizer=%s",
             args.service_name,
             args.port,
-            args.tokenizer or args.model_name,
+            resolved_tokenizer,
         )
     else:
         if not service_dir.exists():
@@ -708,12 +790,9 @@ def main() -> int:
                         benchmark_script=benchmark_script,
                         dataset_path=dataset_path,
                         result_dir=result_dir,
-                        model_name=args.model_name,
+                        args=args,
                         info=info,
                         concurrency=conc,
-                        prompts_factor=args.prompts_factor,
-                        seed=args.seed,
-                        python_bin=args.python_bin,
                     )
                     elapsed = time.time() - start_ts
                     LOG.info(

@@ -1,15 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 
+import io
 import json
 import os
 import sys
 import time
 import traceback
+import wave
 from dataclasses import dataclass, field
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Union
 
 import aiohttp
 import huggingface_hub.constants
+import numpy as np
 from tqdm.asyncio import tqdm
 from transformers import (AutoTokenizer, PreTrainedTokenizer,
                           PreTrainedTokenizerFast)
@@ -427,6 +430,142 @@ async def async_request_openai_chat_completions(
     return output
 
 
+async def async_request_openai_audio_transcriptions(
+    request_func_input: RequestFuncInput,
+    pbar: Optional[tqdm] = None,
+) -> RequestFuncOutput:
+    api_url = request_func_input.api_url
+    assert api_url.endswith(
+        "audio/transcriptions"
+    ), "OpenAI audio transcription API URL must end with 'audio/transcriptions'."
+
+    audio_content = request_func_input.multi_modal_content
+    if not isinstance(audio_content, dict):
+        raise TypeError("Audio benchmark expects dict multimodal content.")
+
+    audio_bytes = audio_content.get("bytes")
+    audio_path = audio_content.get("path")
+    filename = audio_content.get("filename")
+    content_type = audio_content.get("content_type", "audio/wav")
+
+    mm_audio = audio_content.get("audio")
+    if audio_bytes is None and mm_audio is not None:
+        if (
+            isinstance(mm_audio, (tuple, list))
+            and len(mm_audio) == 2
+            and isinstance(mm_audio[1], (int, float))
+        ):
+            waveform, sampling_rate = mm_audio
+            samples = np.asarray(waveform, dtype=np.float32)
+            if samples.ndim == 1:
+                samples = samples[:, None]
+            samples = np.clip(samples, -1.0, 1.0)
+            samples_i16 = (samples * 32767.0).astype(np.int16)
+            buffer = io.BytesIO()
+            with wave.open(buffer, "wb") as wav_file:
+                wav_file.setnchannels(samples_i16.shape[1])
+                wav_file.setsampwidth(2)
+                wav_file.setframerate(int(sampling_rate))
+                wav_file.writeframes(samples_i16.tobytes())
+            audio_bytes = buffer.getvalue()
+            filename = filename or "audio.wav"
+            content_type = "audio/wav"
+        elif isinstance(mm_audio, str):
+            audio_path = mm_audio
+
+    if audio_bytes is None and audio_path:
+        with open(audio_path, "rb") as infile:
+            audio_bytes = infile.read()
+        filename = filename or os.path.basename(audio_path)
+
+    if audio_bytes is None:
+        raise ValueError("Audio transcription request is missing audio payload.")
+
+    if not filename:
+        filename = "audio.wav"
+
+    headers = {}
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    form = aiohttp.FormData()
+    form.add_field(
+        "file",
+        audio_bytes,
+        filename=filename,
+        content_type=content_type,
+    )
+    form.add_field(
+        "model",
+        request_func_input.model_name
+        if request_func_input.model_name else request_func_input.model,
+    )
+    form.add_field("max_completion_tokens", str(request_func_input.output_len))
+    form.add_field("stream", "true")
+    form.add_field("language", "en")
+    form.add_field("stream_include_usage", "true")
+    form.add_field("stream_continuous_usage_stats", "true")
+
+    output = RequestFuncOutput()
+    output.prompt_len = request_func_input.prompt_len
+
+    generated_text = ""
+    ttft = 0.0
+    st = time.perf_counter()
+    most_recent_timestamp = st
+    try:
+        async with aiohttp.ClientSession(trust_env=True,
+                                         timeout=AIOHTTP_TIMEOUT) as session:
+            async with session.post(url=api_url, data=form,
+                                    headers=headers) as response:
+                if response.status == 200:
+                    async for chunk_bytes in response.content:
+                        chunk_bytes = chunk_bytes.strip()
+                        if not chunk_bytes:
+                            continue
+                        for line in chunk_bytes.decode("utf-8").splitlines():
+                            line = line.strip()
+                            if not line or not line.startswith("data: "):
+                                continue
+                            chunk = line.removeprefix("data: ")
+                            if chunk == "[DONE]":
+                                continue
+                            timestamp = time.perf_counter()
+                            data = json.loads(chunk)
+                            if choices := data.get("choices"):
+                                content = choices[0]["delta"].get("content")
+                                if ttft == 0.0:
+                                    ttft = timestamp - st
+                                    output.ttft = ttft
+                                else:
+                                    output.itl.append(timestamp -
+                                                      most_recent_timestamp)
+                                generated_text += content or ""
+                                most_recent_timestamp = timestamp
+                            elif usage := data.get("usage"):
+                                output.output_tokens = usage.get(
+                                    "completion_tokens", 0)
+                    output.generated_text = generated_text
+                    output.latency = most_recent_timestamp - st
+                    output.success = True
+                else:
+                    try:
+                        error_text = await response.text()
+                    except Exception:
+                        error_text = response.reason or ""
+                    output.error = error_text or response.reason or ""
+                    output.success = False
+    except Exception:
+        output.success = False
+        exc_info = sys.exc_info()
+        output.error = "".join(traceback.format_exception(*exc_info))
+
+    if pbar:
+        pbar.update(1)
+    return output
+
+
 def get_model(pretrained_model_name_or_path: str) -> str:
     if os.getenv('VLLM_USE_MODELSCOPE', 'False').lower() == 'true':
         from modelscope import snapshot_download
@@ -478,6 +617,7 @@ ASYNC_REQUEST_FUNCS = {
     "lmdeploy": async_request_openai_completions,
     "deepspeed-mii": async_request_deepspeed_mii,
     "openai": async_request_openai_completions,
+    "openai-audio": async_request_openai_audio_transcriptions,
     "openai-chat": async_request_openai_chat_completions,
     "tensorrt-llm": async_request_trt_llm,
     "scalellm": async_request_openai_completions,

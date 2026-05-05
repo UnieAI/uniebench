@@ -477,6 +477,125 @@ def _extract_hf_prompt_completion(
     return prompt, completion
 
 
+def _count_text_tokens(
+    text: str,
+    tokenizer: Optional[PreTrainedTokenizerBase],
+) -> int:
+    if tokenizer is None:
+        return len(text.split())
+    return len(tokenizer(text).input_ids)
+
+
+def _guess_audio_content_type(filename: str) -> str:
+    lower = filename.lower()
+    if lower.endswith(".mp3"):
+        return "audio/mpeg"
+    if lower.endswith(".flac"):
+        return "audio/flac"
+    if lower.endswith(".ogg"):
+        return "audio/ogg"
+    if lower.endswith(".m4a"):
+        return "audio/mp4"
+    if lower.endswith(".mp4"):
+        return "audio/mp4"
+    if lower.endswith(".webm"):
+        return "audio/webm"
+    return "audio/wav"
+
+
+def _extract_audio_content(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    for key in ("audio", "file", "audio_file", "audio_path", "path"):
+        if key not in data:
+            continue
+        value = data[key]
+        if isinstance(value, str) and value:
+            return {
+                "path": value,
+                "filename": os.path.basename(value),
+                "content_type": _guess_audio_content_type(value),
+            }
+        if not isinstance(value, dict):
+            continue
+        array = value.get("array")
+        sampling_rate = value.get("sampling_rate")
+        if array is not None and sampling_rate:
+            return {"audio": (array, int(sampling_rate))}
+        path = value.get("path")
+        if path:
+            return {
+                "path": path,
+                "filename": os.path.basename(path),
+                "content_type": _guess_audio_content_type(path),
+            }
+        raw_bytes = value.get("bytes")
+        if raw_bytes:
+            filename = value.get("filename", "audio.wav")
+            return {
+                "bytes": raw_bytes,
+                "filename": filename,
+                "content_type": _guess_audio_content_type(filename),
+            }
+    return None
+
+
+def _extract_audio_transcription_text(data: Dict[str, Any]) -> Optional[str]:
+    for key in ("text", "sentence", "transcript", "transcription", "answer"):
+        text = _as_text(data.get(key))
+        if text:
+            return text
+    return None
+
+
+def sample_hf_audio_requests(
+    dataset_path: str,
+    dataset_subset: Optional[str],
+    dataset_split: str,
+    num_requests: int,
+    tokenizer: Optional[PreTrainedTokenizerBase],
+    random_seed: int,
+    fixed_output_len: Optional[int] = None,
+) -> List[Tuple[str, int, int, Optional[Dict[str, Any]]]]:
+    dataset = load_dataset(dataset_path,
+                           name=dataset_subset,
+                           split=dataset_split,
+                           streaming=True)
+    shuffled_dataset = dataset.shuffle(seed=random_seed)
+    sampled_requests: List[Tuple[str, int, int, Dict[str, Any]]] = []
+    default_prompt = ""
+    if tokenizer is not None and "openai" in getattr(tokenizer, "name_or_path", ""):
+        default_prompt = "<|startoftranscript|><|en|><|transcribe|><|notimestamps|>"
+    prompt_len = _count_text_tokens(default_prompt, tokenizer)
+    output_len = fixed_output_len if fixed_output_len is not None else 1024
+
+    for data in shuffled_dataset:
+        if len(sampled_requests) == num_requests:
+            break
+
+        audio_content = _extract_audio_content(data)
+        if audio_content is None:
+            continue
+
+        completion = _extract_audio_transcription_text(data)
+        if completion is None and fixed_output_len is None:
+            continue
+
+        sampled_requests.append((default_prompt, prompt_len, output_len, audio_content))
+
+    if not sampled_requests:
+        feature_text = (
+            ", ".join(dataset.features.keys())
+            if isinstance(dataset.features, dict)
+            else str(dataset.features)
+        )
+        raise ValueError(
+            "Unable to sample HF audio requests from dataset. "
+            "Expected an audio/file column and a transcript-like text column. "
+            f"Available features: {feature_text}"
+        )
+
+    return sampled_requests
+
+
 def sample_hf_requests(
     dataset_path: str,
     dataset_subset: Optional[str],
@@ -684,7 +803,7 @@ def calculate_metrics(
     input_requests: List[Tuple[str, int, int]],
     outputs: List[RequestFuncOutput],
     dur_s: float,
-    tokenizer: PreTrainedTokenizerBase,
+    tokenizer: Optional[PreTrainedTokenizerBase],
     selected_percentile_metrics: List[str],
     selected_percentiles: List[float],
     goodput_config_dict: Dict[str, float],
@@ -707,9 +826,12 @@ def calculate_metrics(
                 # len(outputs[i].itl) since multiple output tokens may be
                 # bundled together
                 # Note : this may inflate the output token count slightly
-                output_len = len(
-                    tokenizer(outputs[i].generated_text,
-                              add_special_tokens=False).input_ids)
+                if tokenizer is None:
+                    output_len = len(outputs[i].generated_text.split())
+                else:
+                    output_len = len(
+                        tokenizer(outputs[i].generated_text,
+                                  add_special_tokens=False).input_ids)
             actual_output_lens.append(output_len)
             total_input += input_requests[i][1]
             tpot = 0
@@ -795,7 +917,7 @@ async def benchmark(
     base_url: str,
     model_id: str,
     model_name: str,
-    tokenizer: PreTrainedTokenizerBase,
+    tokenizer: Optional[PreTrainedTokenizerBase],
     input_requests: List[Tuple[str, int, int]],
     logprobs: Optional[int],
     best_of: int,
@@ -816,12 +938,15 @@ async def benchmark(
         raise ValueError(f"Unknown backend: {backend}")
 
     print("Starting initial single prompt test run...")
-    test_prompt, test_prompt_len, test_output_len, test_mm_content = (
-        input_requests[0])
-    if backend != "openai-chat" and test_mm_content is not None:
-        # multi-modal benchmark is only available on OpenAI Chat backend.
+    test_prompt, test_prompt_len, test_output_len, test_content = input_requests[0]
+    test_mm_content = (
+        test_content if backend in {"openai-chat", "openai-audio"} else None
+    )
+    if backend not in {"openai-chat", "openai-audio"} and test_content is not None:
         raise ValueError(
-            "Multi-modal content is only supported on 'openai-chat' backend.")
+            "Request attachments are only supported on 'openai-chat' and "
+            "'openai-audio' backends."
+        )
     test_input = RequestFuncInput(
         model=model_id,
         model_name=model_name,
@@ -893,11 +1018,13 @@ async def benchmark(
     benchmark_start_time = time.perf_counter()
     tasks: List[asyncio.Task] = []
     async for request in get_request(input_requests, request_rate, burstiness):
-        prompt, prompt_len, output_len, mm_content = request
+        prompt, prompt_len, output_len, content = request
         req_model_id, req_model_name = model_id, model_name
         if lora_modules:
             req_lora_module = next(lora_modules)
             req_model_id, req_model_name = req_lora_module, req_lora_module
+
+        mm_content = content if backend in {"openai-chat", "openai-audio"} else None
 
         request_func_input = RequestFuncInput(model=req_model_id,
                                               model_name=req_model_name,
@@ -1101,9 +1228,19 @@ def main(args: argparse.Namespace):
         api_url = f"http://{args.host}:{args.port}{args.endpoint}"
         base_url = f"http://{args.host}:{args.port}"
 
-    tokenizer = get_tokenizer(tokenizer_id,
-                              tokenizer_mode=tokenizer_mode,
-                              trust_remote_code=args.trust_remote_code)
+    tokenizer: Optional[PreTrainedTokenizerBase] = None
+    try:
+        tokenizer = get_tokenizer(tokenizer_id,
+                                  tokenizer_mode=tokenizer_mode,
+                                  trust_remote_code=args.trust_remote_code)
+    except Exception:
+        if backend != "openai-audio":
+            raise
+        warnings.warn(
+            "Tokenizer load failed for audio benchmark. Falling back to "
+            "whitespace-based output token counting.",
+            stacklevel=2,
+        )
 
     if args.dataset is not None:
         warnings.warn(
@@ -1165,15 +1302,27 @@ def main(args: argparse.Namespace):
                               output_len, _ in input_requests]
 
     elif args.dataset_name == "hf":
-        input_requests = sample_hf_requests(
-            dataset_path=args.dataset_path,
-            dataset_subset=args.hf_subset,
-            dataset_split=args.hf_split,
-            num_requests=args.num_prompts,
-            tokenizer=tokenizer,
-            random_seed=args.seed,
-            fixed_output_len=args.hf_output_len,
-        )
+        if args.backend == "openai-audio":
+            input_requests = sample_hf_audio_requests(
+                dataset_path=args.dataset_path,
+                dataset_subset=args.hf_subset,
+                dataset_split=args.hf_split,
+                num_requests=args.num_prompts,
+                tokenizer=tokenizer,
+                random_seed=args.seed,
+                fixed_output_len=args.hf_output_len,
+            )
+        else:
+            assert tokenizer is not None
+            input_requests = sample_hf_requests(
+                dataset_path=args.dataset_path,
+                dataset_subset=args.hf_subset,
+                dataset_split=args.hf_split,
+                num_requests=args.num_prompts,
+                tokenizer=tokenizer,
+                random_seed=args.seed,
+                fixed_output_len=args.hf_output_len,
+            )
 
     elif args.dataset_name == "random":
         input_requests = sample_random_requests(
