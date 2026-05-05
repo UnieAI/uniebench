@@ -693,20 +693,22 @@ def main() -> int:
             raise RuntimeError(
                 "--tokenizer or --model-name is required when --with-container is set"
             )
+        resolved_served_model_name = args.served_model_name or args.service_name
         compose_infos.append(
             ComposeInfo(
                 compose_file=Path("with-container"),
                 service_name=args.service_name,
                 host_port=args.port,
                 tokenizer=resolved_tokenizer,
-                served_model_name=args.served_model_name,
+                served_model_name=resolved_served_model_name,
             )
         )
         LOG.info(
-            "[info] direct with-container mode: service=%s port=%s tokenizer=%s",
+            "[info] direct with-container mode: service=%s port=%s tokenizer=%s served-model=%s",
             args.service_name,
             args.port,
             resolved_tokenizer,
+            resolved_served_model_name,
         )
     else:
         if not service_dir.exists():

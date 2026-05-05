@@ -17,6 +17,11 @@ from tqdm.asyncio import tqdm
 from transformers import (AutoTokenizer, PreTrainedTokenizer,
                           PreTrainedTokenizerFast)
 
+try:
+    import soundfile
+except ImportError:
+    soundfile = None
+
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=6 * 60 * 60)
 
 
@@ -457,17 +462,27 @@ async def async_request_openai_audio_transcriptions(
         ):
             waveform, sampling_rate = mm_audio
             samples = np.asarray(waveform, dtype=np.float32)
-            if samples.ndim == 1:
-                samples = samples[:, None]
-            samples = np.clip(samples, -1.0, 1.0)
-            samples_i16 = (samples * 32767.0).astype(np.int16)
             buffer = io.BytesIO()
-            with wave.open(buffer, "wb") as wav_file:
-                wav_file.setnchannels(samples_i16.shape[1])
-                wav_file.setsampwidth(2)
-                wav_file.setframerate(int(sampling_rate))
-                wav_file.writeframes(samples_i16.tobytes())
-            audio_bytes = buffer.getvalue()
+            if soundfile is not None:
+                soundfile.write(
+                    buffer,
+                    samples,
+                    int(sampling_rate),
+                    format="WAV",
+                )
+                buffer.seek(0)
+                audio_bytes = buffer.read()
+            else:
+                if samples.ndim == 1:
+                    samples = samples[:, None]
+                samples = np.clip(samples, -1.0, 1.0)
+                samples_i16 = (samples * 32767.0).astype(np.int16)
+                with wave.open(buffer, "wb") as wav_file:
+                    wav_file.setnchannels(samples_i16.shape[1])
+                    wav_file.setsampwidth(2)
+                    wav_file.setframerate(int(sampling_rate))
+                    wav_file.writeframes(samples_i16.tobytes())
+                audio_bytes = buffer.getvalue()
             filename = filename or "audio.wav"
             content_type = "audio/wav"
         elif isinstance(mm_audio, str):

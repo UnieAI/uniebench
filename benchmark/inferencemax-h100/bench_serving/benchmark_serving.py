@@ -514,26 +514,49 @@ def _extract_audio_content(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                 "filename": os.path.basename(value),
                 "content_type": _guess_audio_content_type(value),
             }
+        if hasattr(value, "get_all_samples"):
+            try:
+                decoded = value.get_all_samples()
+                waveform = decoded.data
+                if hasattr(waveform, "cpu"):
+                    waveform = waveform.cpu()
+                waveform = np.asarray(waveform)
+                if waveform.ndim == 2:
+                    waveform = waveform.T
+                return {"audio": (waveform, int(decoded.sample_rate))}
+            except Exception:
+                pass
+        if hasattr(value, "data") and hasattr(value, "sample_rate"):
+            waveform = value.data
+            if hasattr(waveform, "cpu"):
+                waveform = waveform.cpu()
+            waveform = np.asarray(waveform)
+            if waveform.ndim == 2:
+                waveform = waveform.T
+            return {"audio": (waveform, int(value.sample_rate))}
         if not isinstance(value, dict):
             continue
         array = value.get("array")
         sampling_rate = value.get("sampling_rate")
         if array is not None and sampling_rate:
             return {"audio": (array, int(sampling_rate))}
+        raw_bytes = value.get("bytes")
+        if raw_bytes:
+            path = value.get("path")
+            filename = value.get("filename") or (
+                os.path.basename(path) if path else "audio.wav"
+            )
+            return {
+                "bytes": raw_bytes,
+                "filename": filename,
+                "content_type": _guess_audio_content_type(filename),
+            }
         path = value.get("path")
         if path:
             return {
                 "path": path,
                 "filename": os.path.basename(path),
                 "content_type": _guess_audio_content_type(path),
-            }
-        raw_bytes = value.get("bytes")
-        if raw_bytes:
-            filename = value.get("filename", "audio.wav")
-            return {
-                "bytes": raw_bytes,
-                "filename": filename,
-                "content_type": _guess_audio_content_type(filename),
             }
     return None
 
