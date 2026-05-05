@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Benchmark Dashboard MVP</title>
+  <link rel="stylesheet" href="./styles/base.css" />
+  <link rel="stylesheet" href="./styles/benchmark.css" />
+  <link rel="stylesheet" href="./styles/monitor.css" />
+  <link rel="stylesheet" href="./styles/scripts.css" />
+  <link rel="stylesheet" href="./styles/global-config.css" />
+</head>
+<body>
+  <div class="wrap">
+    <h1 class="title" data-i18n="pageTitle">Benchmark Dashboard MVP</h1>
+    <p class="sub" data-i18n="pageSubtitle">MVP: 即時系統資源監看 + 設定檔編輯器</p>
+
+    <div class="toolbar">
+      <label for="apiBase" data-i18n="apiBaseLabel">API Base URL</label>
+      <input id="apiBase" type="text" value="http://localhost:2148" />
+      <div class="lang-box">
+        <label for="langSelect" data-i18n="langLabel">語言</label>
+        <select id="langSelect">
+          <option value="zh">中文</option>
+          <option value="en">English</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="gpu" data-i18n="tabMonitor">系統資源監看</button>
+      <button class="tab-btn" data-tab="scripts" data-i18n="tabScripts">服務腳本</button>
+      <button class="tab-btn" data-tab="benchmarkConfig" data-i18n="tabBenchmarkConfig">Benchmark 設定</button>
+      <button class="tab-btn" data-tab="globalConfig" data-i18n="tabGlobalConfig">全域設定</button>
+      <button class="tab-btn ready-tab-btn" data-tab="readyToRun" data-i18n="tabReadyToRun">Ready to Run Test</button>
+    </div>
+    <div id="tabContent"></div>
+  </div>
+  <div id="floatingMonitor" class="floating-monitor hidden"></div>
+  <div class="app-version">v1.0.0</div>
+
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

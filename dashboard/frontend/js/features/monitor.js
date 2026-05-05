@@ -1,0 +1,217 @@
+import { requestJson } from "../core/api.js";
+import { t } from "../core/i18n.js";
+import { formatMemText, memPct, num, pct, setStatus, shortenGpuName } from "../core/ui.js";
+
+const FLOATING_COLLAPSED_KEY = "dashboard_floating_monitor_collapsed";
+
+let floatingEnabled = false;
+let floatingCollapsed = false;
+let lastMonitorData = null;
+
+try {
+  floatingCollapsed = localStorage.getItem(FLOATING_COLLAPSED_KEY) === "1";
+} catch {
+  floatingCollapsed = false;
+}
+
+function setFloatingCollapsed(value) {
+  floatingCollapsed = Boolean(value);
+  try {
+    localStorage.setItem(FLOATING_COLLAPSED_KEY, floatingCollapsed ? "1" : "0");
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function setGpuBodyMessage(messageKey) {
+  const gpuBody = document.getElementById("gpuBody");
+  if (!gpuBody) return;
+  gpuBody.innerHTML = `<tr><td colspan="6">${t(messageKey)}</td></tr>`;
+}
+
+function renderSystem(system) {
+  const cpuEl = document.getElementById("cpuUsage");
+  const ramPctEl = document.getElementById("ramUsagePct");
+  const ramMbEl = document.getElementById("ramUsageMb");
+
+  if (!cpuEl || !ramPctEl || !ramMbEl) return;
+
+  if (!system) {
+    cpuEl.textContent = t("na");
+    ramPctEl.textContent = t("na");
+    ramMbEl.textContent = t("na");
+    return;
+  }
+
+  cpuEl.textContent = `${num(system.cpu_percent)}%`;
+  ramPctEl.textContent = `${num(system.ram_percent)}%`;
+  ramMbEl.textContent = `${num(system.ram_used_mb)} / ${num(system.ram_total_mb)}`;
+}
+
+function renderFullGpuTable(gpus) {
+  const gpuBody = document.getElementById("gpuBody");
+  if (!gpuBody) return;
+
+  if (!Array.isArray(gpus) || gpus.length === 0) {
+    setGpuBodyMessage("rowNoGpu");
+    return;
+  }
+
+  gpuBody.innerHTML = gpus.map((g) => `
+    <tr>
+      <td>${g.index}</td>
+      <td><span class="gpu-name" title="${g.name || ""}">${shortenGpuName(g.name || t("na"))}</span></td>
+      <td>
+        <div class="util-wrap">
+          <div class="util-bar">
+            <div class="util-fill" style="width: ${pct(g.utilization_gpu_pct) === null ? 0 : pct(g.utilization_gpu_pct)}%"></div>
+          </div>
+          <span class="util-text">${pct(g.utilization_gpu_pct) === null ? t("na") : pct(g.utilization_gpu_pct) + "%"}</span>
+        </div>
+      </td>
+      <td>
+        <div class="mem-wrap">
+          <div class="mem-bar">
+            <div class="mem-fill" style="width: ${memPct(g.memory_used_mb, g.memory_total_mb)}%"></div>
+          </div>
+          <div class="mem-text">${formatMemText(g.memory_used_mb, g.memory_total_mb)}</div>
+        </div>
+      </td>
+      <td>${g.temperature_c}</td>
+      <td>${g.power_draw_w}</td>
+    </tr>
+  `).join("");
+}
+
+function renderFloatingMonitor(data) {
+  const root = document.getElementById("floatingMonitor");
+  if (!root) return;
+
+  if (!floatingEnabled) {
+    root.classList.add("hidden");
+    root.classList.remove("collapsed");
+    root.innerHTML = "";
+    return;
+  }
+
+  const gpus = Array.isArray(data?.gpus) ? data.gpus : [];
+  const system = data?.system || {};
+  const cpuText = pct(system.cpu_percent) === null ? t("na") : `${pct(system.cpu_percent)}%`;
+  const ramText = pct(system.ram_percent) === null ? t("na") : `${pct(system.ram_percent)}%`;
+
+  const titleRow = `
+    <div class="floating-monitor-title-row">
+      <div class="floating-monitor-title">${t("tabMonitor")}</div>
+      <button id="floatingMonitorToggleBtn" class="floating-monitor-toggle" type="button">${floatingCollapsed ? "+" : "−"}</button>
+    </div>
+  `;
+
+  const bodyHeader = `
+    <div class="floating-monitor-system">
+      <span>${t("metricCpu")}: ${cpuText}</span>
+      <span>${t("metricRamPct")}: ${ramText}</span>
+    </div>
+    <div class="floating-monitor-head">
+      <span>ID</span>
+      <span>${t("colUtil")}</span>
+      <span>${t("colMemory")}</span>
+    </div>
+  `;
+
+  if (!data || !data.available || gpus.length === 0) {
+    root.classList.remove("hidden");
+    root.classList.toggle("collapsed", floatingCollapsed);
+    root.innerHTML = `${titleRow}${floatingCollapsed ? "" : `<div class="floating-monitor-empty">${t("rowNoData")}</div>`}`;
+    const toggleBtn = document.getElementById("floatingMonitorToggleBtn");
+    if (toggleBtn) {
+      toggleBtn.addEventListener("click", () => {
+        setFloatingCollapsed(!floatingCollapsed);
+        renderFloatingMonitor(lastMonitorData);
+      });
+    }
+    return;
+  }
+
+  if (floatingCollapsed) {
+    root.classList.remove("hidden");
+    root.classList.add("collapsed");
+    root.innerHTML = titleRow;
+    const toggleBtn = document.getElementById("floatingMonitorToggleBtn");
+    if (toggleBtn) {
+      toggleBtn.addEventListener("click", () => {
+        setFloatingCollapsed(!floatingCollapsed);
+        renderFloatingMonitor(lastMonitorData);
+      });
+    }
+    return;
+  }
+
+  const rows = gpus.map((g) => {
+    const utilText = pct(g.utilization_gpu_pct) === null ? t("na") : `${pct(g.utilization_gpu_pct)}%`;
+    const memText = formatMemText(g.memory_used_mb, g.memory_total_mb);
+    return `
+      <div class="floating-monitor-row">
+        <span>${g.index}</span>
+        <span>${utilText}</span>
+        <span>${memText}</span>
+      </div>
+    `;
+  }).join("");
+
+  root.classList.remove("hidden");
+  root.classList.remove("collapsed");
+  root.innerHTML = titleRow + bodyHeader + rows;
+  const toggleBtn = document.getElementById("floatingMonitorToggleBtn");
+  if (toggleBtn) {
+    toggleBtn.addEventListener("click", () => {
+      setFloatingCollapsed(!floatingCollapsed);
+      renderFloatingMonitor(lastMonitorData);
+    });
+  }
+}
+
+export async function refreshMonitor() {
+  try {
+    const { ok, status, data } = await requestJson("/api/gpu");
+    lastMonitorData = data;
+    renderSystem(data.system || null);
+    renderFloatingMonitor(data);
+
+    if (!ok) {
+      setStatus("gpuStatus", t("statusFetchFail", { reason: data.error || data.detail || status }), "err");
+      setGpuBodyMessage("rowNoData");
+      return;
+    }
+
+    if (!data.available) {
+      setStatus("gpuStatus", t("statusGpuUnavailable", { reason: data.error || status }), "err");
+      setGpuBodyMessage("rowNoData");
+      return;
+    }
+
+    setStatus("gpuStatus", t("statusUpdated", { time: data.time }), "ok");
+    renderFullGpuTable(data.gpus);
+  } catch (err) {
+    lastMonitorData = null;
+    renderSystem(null);
+    renderFloatingMonitor(null);
+    setStatus("gpuStatus", t("statusConnError", { reason: err }), "err");
+    setGpuBodyMessage("rowCheckApi");
+  }
+}
+
+export function setMonitorFloatingMode(enableFloating) {
+  floatingEnabled = Boolean(enableFloating);
+  if (!floatingEnabled) {
+    const root = document.getElementById("floatingMonitor");
+    if (root) {
+      root.classList.add("hidden");
+      root.classList.remove("collapsed");
+      root.innerHTML = "";
+    }
+  }
+}
+
+export function initMonitor() {
+  refreshMonitor();
+}

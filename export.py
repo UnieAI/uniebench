@@ -8,6 +8,8 @@ import gspread
 import logging
 from google.oauth2.service_account import Credentials
 
+from log_utils import consume_verbosity_flags, configure_logging
+
 operation_count = 0
 def operation_check():
     global operation_count
@@ -24,108 +26,52 @@ def _collect_rows(test_name: str):
     else:
         files = glob.glob(f'./results/{test_name}/*/*/result.json')
 
-    # 2. 整理資料
-    header = None
-    rows = []
+    # 2. 先掃描所有資料，收集完整欄位
+    records = []
+    key_order = []
+    key_set = set()
     for file_path in files:
         with open(file_path, 'r', encoding='utf8') as f:
             alldata = json.load(f)
             if not isinstance(alldata, list):
                 alldata = [alldata]
 
+        parts = file_path.split(os.sep)
+        if len(parts) >= 5:
+            date_time = parts[4]
+        else:
+            date_time = ''
+
         for data in alldata:
-            # if 'remark' not in data:
-            #     data['remark'] = ''
-            # if 'seed' not in data:
-            #     data['seed'] = 'random'
+            if 'remark' not in data:
+                data['remark'] = ''
+            if 'seed' not in data:
+                data['seed'] = 'random'
 
-            parts = file_path.split(os.sep)
-            if len(parts) >= 5:
-                date_time = parts[4]
-            else:
-                date_time = ''
+            records.append((date_time, data))
+            for k in data.keys():
+                if k not in key_set:
+                    key_set.add(k)
+                    key_order.append(k)
 
-            if header is None:
-                data_keys = list(data.keys())
-                if 'engine' in data_keys:
-                    data_keys = ['engine'] + [k for k in data_keys if k != 'engine']
-                    header = data_keys[:1] + ['date_time'] + data_keys[1:]
-                else:
-                    header = ['date_time'] + data_keys
+    header = ['date_time'] + key_order if key_order else ['date_time']
 
-            row = [date_time if k == 'date_time' else data.get(k, '') for k in header]
-            rows.append(row)
-
-    if header is None:
-        header = ['date_time']
+    # 3. 依完整 header 產生輸出列
+    rows = []
+    for date_time, data in records:
+        row = [date_time] + [data.get(k, '') for k in header[1:]]
+        rows.append(row)
 
     return header, rows
 
-import glob
-def benchmark_post_processing(path):
-    dist_folder = './results'
-    os.makedirs(dist_folder, exist_ok=True)
-    
-    # result.json
-    sources = glob.glob(f'{path}/*.json')
-    all_result = []
-    for source in sources:
-        with open(source, 'r') as fr:
-            data = json.load(fr)
-        
-        result = {
-            "platform": 'Pro6000',
-            "engine": source,
-            "benchmark": 'inferencemax-h100',
-
-            "request_count": data['completed'],
-            "interval": data['duration'] * 1000, # second to ms
-            "concurrency": data['max_concurrency'],
-            "model_name": data['tokenizer_id'],
-            "input_tokens": data['total_input_tokens'] / data['completed'],
-            "output_tokens": data['total_output_tokens'] / data['completed'],
-
-            "request_throughput": data['request_throughput'],
-            "output_token_throughput": data['output_throughput'],
-
-            "request_latency.avg": data['mean_e2el_ms'],
-            "request_latency.median": data['median_e2el_ms'],
-            "request_latency.std": data['std_e2el_ms'],
-            "request_latency.p99": data['p99_e2el_ms'],
-
-            "time_to_first_token.avg": data['mean_ttft_ms'],
-            "time_to_first_token.median": data['median_ttft_ms'],
-            "time_to_first_token.std": data['std_ttft_ms'],
-            "time_to_first_token.p99": data['p99_ttft_ms'],
-
-            "inter_token_latency.avg": data['mean_itl_ms'],
-            "inter_token_latency.median": data['median_itl_ms'],
-            "inter_token_latency.std": data['std_itl_ms'],
-            "inter_token_latency.p99": data['p99_itl_ms'],
-        }
-        all_result.append(result)
-    
-    try:
-        os.mkdir('./export')
-    except:
-        pass
-    dist = './export/result.json'
-    with open(dist, 'w') as fw:
-        json.dump(all_result, fw, indent=4)
-
-    # shutil.copy(source, dist_folder)
-    return dist
-
-
 def _export_to_csv_fallback(test_name: str, worksheet_name: str, header, rows):
-    # os.makedirs('bench_export', exist_ok=True)
-    name = input('csv name: > ')
+    os.makedirs('bench_export', exist_ok=True)
     now_str = datetime.now().strftime('%Y%m%d_%H%M%S')
     base_name = worksheet_name or os.path.basename(test_name)
     if base_name.endswith('.json'):
         base_name = os.path.splitext(base_name)[0]
     safe_name = base_name.replace(os.sep, '_').replace(' ', '_')
-    output_path = f'./export/{name}_{now_str}.csv'
+    output_path = f'bench_export/{safe_name}_{now_str}.csv'
 
     with open(output_path, 'w', encoding='utf8', newline='') as csvfile:
         writer = csv.writer(csvfile)
@@ -185,40 +131,37 @@ def export(test_name: str, sheet_name: str, worksheet_name = None):
         operation_check()
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
-    path = input('path: > ')
-    path = benchmark_post_processing(path)
-    path = export(path, path)
+    configure_logging(consume_verbosity_flags())
 
-    # # 讀取 sheet_id_list.json，讓使用者選擇輸出目的地
-    # with open('sheet_id_list.json', 'r', encoding='utf8') as f:
-    #     sheet_id_map = json.load(f)
-    # sheet_names = list(sheet_id_map.keys())
-    # print('Available sheet names:')
-    # for name in sheet_names:
-    #     print(f'- {name}')
-    # selected_sheet = input('Enter the sheet name to export: ').strip()
+    # 讀取 sheet_id_list.json，讓使用者選擇輸出目的地
+    with open('sheet_id_list.json', 'r', encoding='utf8') as f:
+        sheet_id_map = json.load(f)
+    sheet_names = list(sheet_id_map.keys())
+    print('Available sheet names:')
+    for name in sheet_names:
+        print(f'- {name}')
+    selected_sheet = input('Enter the sheet name to export: ').strip()
 
-    # # 找到 ./result 下面一層資料夾有哪些，列出選項讓使用者輸入
-    # try:
-    #     folders = next(os.walk('./results'))[1]
-    # except:
-    #     folders = []
+    # 找到 ./result 下面一層資料夾有哪些，列出選項讓使用者輸入
+    try:
+        folders = next(os.walk('./results'))[1]
+    except:
+        folders = []
         
-    # print('Available test names:')
-    # for f in folders:
-    #     print(f'- {f}')
-    # selected_folder = input('Enter the test name or full json path to export: ').strip()
-    # worksheet_name = None
-    # if selected_folder not in folders:
-    #     worksheet_name = input("Enter new worksheet name: ")
+    print('Available test names:')
+    for f in folders:
+        print(f'- {f}')
+    selected_folder = input('Enter the test name or full json path to export: ').strip()
+    worksheet_name = None
+    if selected_folder not in folders:
+        worksheet_name = input("Enter new worksheet name: ")
 
-    # operation_check()
-    # if selected_sheet not in sheet_names:
-    #     print(f'Sheet name "{selected_sheet}" not found in sheet_id_list.json.')
-    # else:
-    #     try:
-    #         export(selected_folder, selected_sheet, worksheet_name)
-    #         print("export completed.")
-    #     except Exception as e:
-    #         print("export failed.", e)
+    operation_check()
+    if selected_sheet not in sheet_names:
+        print(f'Sheet name "{selected_sheet}" not found in sheet_id_list.json.')
+    else:
+        try:
+            export(selected_folder, selected_sheet, worksheet_name)
+            print("export completed.")
+        except Exception as e:
+            print("export failed.", e)

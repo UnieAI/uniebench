@@ -1,0 +1,191 @@
+<section id="scripts" class="panel active">
+  <div id="scriptsStatus" class="status" data-i18n="scriptsNotLoaded">尚未載入腳本清單</div>
+  <div class="runtime-target-row">
+    <label for="runtimeServerGroupSelect" data-i18n="runtimeServerGroupLabel">執行腳本群組</label>
+    <select id="runtimeServerGroupSelect"></select>
+  </div>
+  <div class="script-layout">
+    <div class="script-pane">
+      <div class="btn-row">
+        <button id="refreshScriptsBtn" class="action info" data-i18n="btnRefreshScripts">重新載入腳本</button>
+      </div>
+      <div id="scriptsDirHint" class="hint">--</div>
+      <div id="scriptList" class="script-list"></div>
+    </div>
+    <div class="script-pane">
+      <div class="script-pane-toolbar">
+        <button id="deleteScriptBtn" class="action danger" data-i18n="btnDeleteScript">刪除腳本</button>
+        <button id="openMoveScriptPopupBtn" class="action info" data-i18n="btnMoveScript">移動腳本</button>
+        <button id="openCreateScriptPopupBtn" class="action success" data-i18n="btnCreateScript">新增腳本</button>
+      </div>
+      <div id="scriptEditorHint" class="hint" data-i18n="scriptEditorHint">點選左側腳本即可編輯</div>
+      <div class="script-actions">
+        <button id="testScriptBtn" class="action secondary" data-i18n="btnTestScript">測試腳本</button>
+        <button id="testInHostBtn" class="action info" data-i18n="btnTestInHost">在 Host 測試</button>
+        <button id="autoDetectScriptMetaBtn" class="action warning" data-i18n="btnAutoDetect">自動偵測</button>
+      </div>
+      <div class="script-meta-grid">
+        <div class="script-meta-item">
+          <label for="scriptMetaTpSize" data-i18n="scriptMetaTpSizeLabel">tp_size</label>
+          <div class="script-meta-input-row">
+            <input id="scriptMetaTpSize" type="number" step="1" min="0" />
+          </div>
+        </div>
+        <div class="script-meta-item">
+          <label for="scriptMetaModelId" data-i18n="scriptMetaModelIdLabel">model_id</label>
+          <div class="script-meta-input-row">
+            <input id="scriptMetaModelId" type="text" />
+          </div>
+        </div>
+        <div class="script-meta-item">
+          <label for="scriptMetaModelName" data-i18n="scriptMetaModelNameLabel">model_name</label>
+          <div class="script-meta-input-row">
+            <input id="scriptMetaModelName" type="text" list="scriptModelNameOptions" />
+            <datalist id="scriptModelNameOptions"></datalist>
+          </div>
+        </div>
+        <div class="script-meta-item">
+          <label for="scriptMetaModelPath" data-i18n="scriptMetaModelPathLabel">model_path</label>
+          <div class="script-meta-input-row">
+            <input id="scriptMetaModelPath" type="text" />
+          </div>
+        </div>
+        <div class="script-meta-item">
+          <label for="scriptMetaBaseUrl" data-i18n="scriptMetaBaseUrlLabel">base_url</label>
+          <div class="script-meta-input-row">
+            <input id="scriptMetaBaseUrl" type="text" placeholder="http://localhost" />
+          </div>
+        </div>
+        <div class="script-meta-item">
+          <label for="scriptMetaPort" data-i18n="scriptMetaPortLabel">port</label>
+          <div class="script-meta-input-row">
+            <input id="scriptMetaPort" type="number" step="1" min="0" />
+          </div>
+        </div>
+      </div>
+      <textarea id="scriptEditor" class="script-editor" spellcheck="false" data-i18n-placeholder="scriptEditorPlaceholder" placeholder="#!/bin/bash&#10;set -euo pipefail&#10;"></textarea>
+    </div>
+  </div>
+
+  <div id="scriptTestPopup" class="test-popup hidden">
+    <div class="test-popup-card">
+      <div class="test-popup-header">
+        <div class="test-popup-title" data-i18n="testPopupTitle">腳本測試狀態</div>
+        <button id="closeTestPopupBtn" class="action secondary" data-i18n="btnClose">關閉</button>
+      </div>
+      <div class="endpoint-row endpoint-popup-row">
+        <label for="popupScriptTestEndpoint" data-i18n="scriptEndpointLabel">Endpoint URL</label>
+        <input
+          id="popupScriptTestEndpoint"
+          type="text"
+          data-i18n-placeholder="scriptEndpointPlaceholder"
+          placeholder="http://localhost:8000"
+        />
+      </div>
+      <div class="script-actions popup-action-row">
+        <button id="popupStartTestScriptBtn" class="action" data-i18n="btnStartTestScript">啟動測試</button>
+        <button id="popupStopTestScriptBtn" class="action danger" data-i18n="btnStopTestScript">停止測試</button>
+      </div>
+      <div class="test-meta-grid">
+        <div class="test-meta-item"><span data-i18n="testScriptLabel">Script</span><strong id="testScriptNameValue">--</strong></div>
+        <div class="test-meta-item"><span data-i18n="testEndpointLabel">Endpoint</span><strong id="testEndpointValue">--</strong></div>
+        <div class="test-meta-item"><span data-i18n="testPidLabel">PID</span><strong id="testPidValue">--</strong></div>
+      </div>
+
+      <div class="test-step-list">
+        <div class="test-step-row">
+          <span class="test-step-label" data-i18n="testStepHealth">Health</span>
+          <span id="testStepHealthState" class="test-step-state testing" data-i18n="testStateTesting">測試中</span>
+        </div>
+        <div class="test-step-row">
+          <span class="test-step-label" data-i18n="testStepModels">v1/models</span>
+          <span id="testStepModelsState" class="test-step-state testing" data-i18n="testStateTesting">測試中</span>
+        </div>
+        <div class="test-step-row">
+          <span class="test-step-label" data-i18n="testStepCompletions">v1/completions</span>
+          <span id="testStepCompletionsState" class="test-step-state testing" data-i18n="testStateTesting">測試中</span>
+        </div>
+      </div>
+      <div id="testPopupDetail" class="hint">--</div>
+      <div class="test-log-block">
+        <div class="test-log-title" data-i18n="testLogTitle">執行 Log</div>
+        <pre id="testLogOutput" class="test-log-output" data-i18n="testNoLogs">尚無 log</pre>
+      </div>
+    </div>
+  </div>
+
+  <div id="hostTestPopup" class="test-popup hidden">
+    <div class="test-popup-card host-test-popup-card">
+      <div class="test-popup-header">
+        <div class="test-popup-title" data-i18n="hostTestPopupTitle">Host 測試指引</div>
+        <button id="closeHostTestPopupBtn" class="action secondary" data-i18n="btnClose">關閉</button>
+      </div>
+      <div class="endpoint-row endpoint-popup-row">
+        <label for="hostTestEndpointInput" data-i18n="scriptEndpointLabel">Endpoint URL</label>
+        <input
+          id="hostTestEndpointInput"
+          type="text"
+          data-i18n-placeholder="scriptEndpointPlaceholder"
+          placeholder="http://localhost:8000"
+        />
+      </div>
+      <div class="host-test-guide" data-i18n="hostTestGuideText">
+        請在 host 終端機貼上並執行下方腳本，完成後將結果回填到下方欄位。
+      </div>
+      <pre id="hostTestCommandOutput" class="host-test-command"></pre>
+      <div class="endpoint-row">
+        <label for="hostTestResultInput" data-i18n="hostTestResultLabel">測試結果回填</label>
+        <textarea
+          id="hostTestResultInput"
+          class="host-test-result-input"
+          data-i18n-placeholder="hostTestResultPlaceholder"
+          placeholder="貼上 host 執行結果（例如 PASS 或 FAIL + 訊息）"
+        ></textarea>
+      </div>
+      <div class="script-actions popup-action-row">
+        <button id="applyHostTestResultBtn" class="action success" data-i18n="btnApplyHostResult">回填結果</button>
+      </div>
+      <div id="hostTestResultEcho" class="hint">--</div>
+    </div>
+  </div>
+
+  <div id="createScriptPopup" class="test-popup hidden">
+    <div class="test-popup-card small-popup-card">
+      <div class="test-popup-header">
+        <div class="test-popup-title" data-i18n="createScriptPopupTitle">新增腳本</div>
+      </div>
+      <div class="endpoint-row">
+        <label for="createScriptGroupSelect" data-i18n="scriptGroupLabel">群組</label>
+        <select id="createScriptGroupSelect"></select>
+      </div>
+      <div class="endpoint-row">
+        <label for="newScriptName" data-i18n="scriptNameLabel">腳本名稱</label>
+        <input id="newScriptName" type="text" data-i18n-placeholder="newScriptPlaceholder" placeholder="輸入新腳本名稱（例如 run_xxx.sh）" />
+      </div>
+      <div class="script-actions popup-action-row">
+        <button id="confirmCreateScriptBtn" class="action success" data-i18n="btnConfirm">確認</button>
+        <button id="cancelCreateScriptBtn" class="action secondary" data-i18n="btnCancel">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="moveScriptPopup" class="test-popup hidden">
+    <div class="test-popup-card small-popup-card">
+      <div class="test-popup-header">
+        <div class="test-popup-title" data-i18n="moveScriptPopupTitle">移動腳本</div>
+      </div>
+      <div class="endpoint-row">
+        <label for="moveScriptGroupSelect" data-i18n="scriptGroupLabel">目標群組</label>
+        <select id="moveScriptGroupSelect"></select>
+      </div>
+      <div class="endpoint-row">
+        <label for="moveScriptGroupInput" data-i18n="scriptGroupOverrideLabel">或輸入新群組</label>
+        <input id="moveScriptGroupInput" type="text" data-i18n-placeholder="moveScriptGroupPlaceholder" placeholder="輸入目標群組（留空則使用左側選單）" />
+      </div>
+      <div class="script-actions popup-action-row">
+        <button id="confirmMoveScriptBtn" class="action info" data-i18n="btnConfirm">確認</button>
+        <button id="cancelMoveScriptBtn" class="action secondary" data-i18n="btnCancel">取消</button>
+      </div>
+    </div>
+  </div>
+</section>

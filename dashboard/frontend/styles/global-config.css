@@ -1,0 +1,145 @@
+.global-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
+  gap: 10px;
+}
+
+.global-card {
+  border: 1px solid #dbe3ee;
+  border-radius: 10px;
+  padding: 10px;
+  background: #f8fafc;
+}
+
+.global-card label {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+  margin-bottom: 6px;
+}
+
+.global-model-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.global-model-title-row label {
+  margin-bottom: 0;
+}
+
+.global-card input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  min-height: 38px;
+  background: #fff;
+  font-size: 14px;
+}
+
+.global-card input[readonly] {
+  background: #eef2f7;
+  color: #334155;
+}
+
+.global-model-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.global-model-row input {
+  flex: 1;
+}
+
+.global-service-account-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.global-service-account-header label {
+  margin-bottom: 0;
+}
+
+.global-status-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.global-status-chip.uploaded {
+  color: #166534;
+  background: #dcfce7;
+  border-color: #86efac;
+}
+
+.global-status-chip.missing {
+  color: #991b1b;
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
+.global-upload-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  align-items: center;
+}
+
+.global-upload-row input[type="file"] {
+  flex: 1;
+  min-height: 38px;
+  padding: 6px;
+}
+
+.global-upload-row .action {
+  white-space: nowrap;
+}
+
+.global-model-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.global-model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  padding: 4px 8px;
+  max-width: 100%;
+}
+
+.global-model-chip span {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: #0f172a;
+}
+
+.global-model-chip .action {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .global-grid {
+    grid-template-columns: 1fr;
+  }
+}
