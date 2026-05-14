@@ -63,6 +63,7 @@ class BenchmarkProfilePayload(BaseModel):
     dataset_path: str = "/workspace/jeff/Benchmark-Autotest/datasets/neural-bridge/rag-dataset-12000/data/train-00000-of-00001-9df3a936e1f63191.parquet"
     token_lengths: list[str] = ["none/1024"]
     concurrency: list[int] = [1, 16, 32, 64, 128, 256, 512]
+    request_rate: list[int] = [1, 2, 4, 8, 16, 32, 64, 128, 192, 256, 320, 384]
 
 
 class BenchmarkConfigPayload(BaseModel):

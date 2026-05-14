@@ -7,12 +7,15 @@ import yaml
 
 DEFAULT_PROFILE_ID = "default"
 DEFAULT_DATASET_PATH = "/workspace/jeff/Benchmark-Autotest/datasets/neural-bridge/rag-dataset-12000/data/train-00000-of-00001-9df3a936e1f63191.parquet"
-DEFAULT_NAME_OPTIONS = ["inferencemax-h100"]
+DEFAULT_NAME_OPTIONS = ["inferencemax-h100", "vllm-bench"]
 DEFAULT_NAME_SELECTED = ["inferencemax-h100"]
 DEFAULT_ENDPOINT_TYPE = "completions"
 DEFAULT_TOKEN_LENGTHS = ["none/1024"]
+DEFAULT_AUDIO_TOKEN_LENGTHS = ["none/none"]
 DEFAULT_CONCURRENCY = [1, 16, 32, 64, 128, 256, 512]
+DEFAULT_REQUEST_RATE = [1, 2, 4, 8, 16, 32, 64, 128, 192, 256, 320, 384]
 CONCURRENCY_OPTIONS = [2**i for i in range(12)]  # 1..2048
+REQUEST_RATE_OPTIONS = [1, 2, 4, 8, 16, 32, 64, 128, 192, 256, 320, 384]
 MODEL_NAME_EXPRESSION = "${server.model_name}"
 
 KEY_DEFAULT_CONFIG = "default_config"
@@ -48,7 +51,7 @@ def _normalize_name_list(raw: Any) -> List[str]:
 
 def _normalize_endpoint_type(raw: Any) -> str:
     text = str(raw or "").strip().lower()
-    if text in {"chat", "completions"}:
+    if text in {"chat", "completions", "audio"}:
         return text
     return DEFAULT_ENDPOINT_TYPE
 
@@ -58,12 +61,15 @@ def _normalize_dataset_path(raw: Any) -> str:
     return text or DEFAULT_DATASET_PATH
 
 
-def _parse_token_length(text: str) -> Tuple[str, int] | None:
+def _parse_token_length(text: str) -> Tuple[str, str | int] | None:
     raw = str(text or "").strip()
     if "/" not in raw:
         return None
     input_len, output_len = raw.split("/", 1)
     input_len = input_len.strip() or "none"
+    output_text = output_len.strip().lower()
+    if output_text == "none":
+        return input_len, "none"
     try:
         output_int = int(output_len.strip())
     except (TypeError, ValueError):
@@ -99,6 +105,19 @@ def _normalize_concurrency(raw: Any) -> List[int]:
     return out or list(DEFAULT_CONCURRENCY)
 
 
+def _normalize_request_rate(raw: Any) -> List[int]:
+    values = raw if isinstance(raw, list) else []
+    out: List[int] = []
+    for item in values:
+        try:
+            num = int(item)
+        except (TypeError, ValueError):
+            continue
+        if num in REQUEST_RATE_OPTIONS and num not in out:
+            out.append(num)
+    return out or list(DEFAULT_REQUEST_RATE)
+
+
 def _default_profile() -> Dict[str, Any]:
     return {
         "id": DEFAULT_PROFILE_ID,
@@ -107,6 +126,7 @@ def _default_profile() -> Dict[str, Any]:
         "dataset_path": DEFAULT_DATASET_PATH,
         "token_lengths": list(DEFAULT_TOKEN_LENGTHS),
         "concurrency": list(DEFAULT_CONCURRENCY),
+        "request_rate": list(DEFAULT_REQUEST_RATE),
     }
 
 
@@ -123,21 +143,28 @@ def _profile_from_yaml_row(row: Any) -> Dict[str, Any] | None:
         if not isinstance(item, dict):
             continue
         input_len = str(item.get("input_len", "none") or "none").strip()
-        output_len = item.get("output_len")
-        try:
-            output_int = int(output_len)
-        except (TypeError, ValueError):
+        output_len = item.get("output_len", "")
+        parsed = _parse_token_length(f"{input_len}/{output_len}")
+        if parsed is None:
             continue
-        token_lengths_raw.append(f"{input_len}/{output_int}")
+        token_lengths_raw.append(f"{parsed[0]}/{parsed[1]}")
 
-    return {
+    endpoint_type = _normalize_endpoint_type(cfg.get("endpoint_type"))
+    profile = {
         "id": profile_id,
         "name": _normalize_name_list(cfg.get("name", [])),
-        "endpoint_type": _normalize_endpoint_type(cfg.get("endpoint_type")),
+        "endpoint_type": endpoint_type,
         "dataset_path": _normalize_dataset_path(cfg.get("dataset_path")),
         "token_lengths": _normalize_token_lengths(token_lengths_raw),
         "concurrency": _normalize_concurrency(cfg.get("concurrency", [])),
+        "request_rate": _normalize_request_rate(cfg.get("request_rate", [])),
     }
+    if endpoint_type == "audio":
+        profile["token_lengths"] = list(DEFAULT_AUDIO_TOKEN_LENGTHS)
+        profile["concurrency"] = []
+    else:
+        profile["request_rate"] = []
+    return profile
 
 
 def get_benchmark_config(config_path: Path) -> Dict[str, Any]:
@@ -172,6 +199,7 @@ def get_benchmark_config(config_path: Path) -> Dict[str, Any]:
         "name_options": list(DEFAULT_NAME_OPTIONS),
         "token_length_options": token_length_options,
         "concurrency_options": list(CONCURRENCY_OPTIONS),
+        "request_rate_options": list(REQUEST_RATE_OPTIONS),
     }
 
 
@@ -191,7 +219,13 @@ def save_benchmark_config(config_path: Path, lock: threading.Lock, payload_profi
             "dataset_path": _normalize_dataset_path(raw.get("dataset_path") if isinstance(raw, dict) else ""),
             "token_lengths": _normalize_token_lengths(raw.get("token_lengths", []) if isinstance(raw, dict) else []),
             "concurrency": _normalize_concurrency(raw.get("concurrency", []) if isinstance(raw, dict) else []),
+            "request_rate": _normalize_request_rate(raw.get("request_rate", []) if isinstance(raw, dict) else []),
         }
+        if profile["endpoint_type"] == "audio":
+            profile["token_lengths"] = list(DEFAULT_AUDIO_TOKEN_LENGTHS)
+            profile["concurrency"] = []
+        else:
+            profile["request_rate"] = []
         normalized.append(profile)
 
     if not normalized:
@@ -211,16 +245,21 @@ def save_benchmark_config(config_path: Path, lock: threading.Lock, payload_profi
         if not token_lengths_yaml:
             token_lengths_yaml = [{"input_len": "none", "output_len": 1024}]
 
+        config_payload = {
+            "name": profile["name"],
+            "endpoint_type": profile["endpoint_type"],
+            "model_name": MODEL_NAME_EXPRESSION,
+            "dataset_path": profile["dataset_path"],
+            "token_lengths": token_lengths_yaml,
+        }
+        if profile["endpoint_type"] == "audio":
+            config_payload["request_rate"] = profile["request_rate"]
+        else:
+            config_payload["concurrency"] = profile["concurrency"]
+
         benchmark_yaml_rows.append({
             "id": profile["id"],
-            "config": {
-                "name": profile["name"],
-                "endpoint_type": profile["endpoint_type"],
-                "model_name": MODEL_NAME_EXPRESSION,
-                "dataset_path": profile["dataset_path"],
-                "token_lengths": token_lengths_yaml,
-                "concurrency": profile["concurrency"],
-            },
+            "config": config_payload,
         })
 
     with lock:

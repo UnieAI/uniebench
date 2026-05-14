@@ -172,10 +172,13 @@ def get_ready_test_items(config_path: Path) -> dict:
             containers = [item for item in cfg.get("container") if isinstance(item, dict)]
 
     token_lengths = []
+    endpoint_type = ""
     concurrency = []
+    request_rate = []
     if isinstance(selected_benchmark, dict):
         cfg = selected_benchmark.get("config")
         if isinstance(cfg, dict):
+            endpoint_type = str(cfg.get("endpoint_type", "") or "").strip().lower()
             raw_token_lengths = cfg.get("token_lengths")
             if isinstance(raw_token_lengths, list):
                 token_lengths = [_format_token_length(item) for item in raw_token_lengths]
@@ -187,15 +190,22 @@ def get_ready_test_items(config_path: Path) -> dict:
                         concurrency.append(int(c))
                     except (TypeError, ValueError):
                         continue
+            raw_request_rate = cfg.get("request_rate")
+            if isinstance(raw_request_rate, list):
+                for r in raw_request_rate:
+                    try:
+                        request_rate.append(int(r))
+                    except (TypeError, ValueError):
+                        continue
 
     items = []
     token_values = token_lengths if token_lengths else ["N/A"]
-    concurrency_values = concurrency if concurrency else ["N/A"]
+    rate_values = (request_rate if request_rate else ["N/A"]) if endpoint_type == "audio" else (concurrency if concurrency else ["N/A"])
     for container in containers:
         name = str(container.get("name", "")).strip() or "unknown"
         for token_text in token_values:
-            for c in concurrency_values:
-                items.append(f"{name} - {token_text} - {c}")
+            for rate in rate_values:
+                items.append(f"{name} - {token_text} - {rate}")
 
     return {
         "items": items,

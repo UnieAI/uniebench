@@ -10,28 +10,54 @@ const DEFAULT_PROFILE = {
   dataset_path: DEFAULT_DATASET_PATH,
   token_lengths: ["none/1024"],
   concurrency: [1, 16, 32, 64, 128, 256, 512],
+  request_rate: [1, 2, 4, 8, 16, 32, 64, 128, 192, 256, 320, 384],
 };
 const BENCHMARK_AUTOSAVE_MS = 700;
+const DEFAULT_CONCURRENCY_OPTIONS = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
+const DEFAULT_REQUEST_RATE_OPTIONS = [1, 2, 4, 8, 16, 32, 64, 128, 192, 256, 320, 384];
+const AUDIO_FIXED_TOKEN_LENGTH = "none/none";
 
 let profiles = [];
 let selectedProfileId = "default";
 let runtimeBenchmarkProfileId = "";
-let nameOptions = ["inferencemax-h100"];
+let nameOptions = ["inferencemax-h100", "vllm-bench"];
 let tokenLengthOptions = ["none/1024"];
-let concurrencyOptions = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
+let concurrencyOptions = [...DEFAULT_CONCURRENCY_OPTIONS];
+let requestRateOptions = [...DEFAULT_REQUEST_RATE_OPTIONS];
 let benchmarkAutoSaveTimer = null;
 let isBenchmarkSaving = false;
+
+function normalizeEndpointType(raw) {
+  const text = String(raw || "").trim().toLowerCase();
+  if (text === "chat" || text === "completions" || text === "audio") return text;
+  return "completions";
+}
+
+function isAudioEndpointType(endpointType) {
+  return normalizeEndpointType(endpointType) === "audio";
+}
 
 function normalizeProfile(raw) {
   if (!raw || typeof raw !== "object") return { ...DEFAULT_PROFILE };
   return {
     id: String(raw.id || "default").trim() || "default",
     name: Array.isArray(raw.name) && raw.name.length > 0 ? raw.name.map((v) => String(v)).filter(Boolean) : ["inferencemax-h100"],
-    endpoint_type: raw.endpoint_type === "chat" ? "chat" : "completions",
+    endpoint_type: normalizeEndpointType(raw.endpoint_type),
     dataset_path: String(raw.dataset_path || "").trim() || DEFAULT_DATASET_PATH,
     token_lengths: Array.isArray(raw.token_lengths) && raw.token_lengths.length > 0 ? raw.token_lengths.map((v) => String(v)).filter(Boolean) : ["none/1024"],
     concurrency: Array.isArray(raw.concurrency) && raw.concurrency.length > 0 ? raw.concurrency.map((v) => Number(v)).filter((v) => Number.isFinite(v)) : [1, 16, 32, 64, 128, 256, 512],
+    request_rate: Array.isArray(raw.request_rate) && raw.request_rate.length > 0 ? raw.request_rate.map((v) => Number(v)).filter((v) => Number.isFinite(v)) : [1, 2, 4, 8, 16, 32, 64, 128, 192, 256, 320, 384],
   };
+}
+
+function setRateLabel(endpointType) {
+  const labelEl = document.getElementById("benchmarkRateLabel");
+  if (!labelEl) return;
+  labelEl.textContent = isAudioEndpointType(endpointType) ? t("benchmarkRequestRateLabel") : t("benchmarkConcurrencyLabel");
+}
+
+function getRateOptions(endpointType) {
+  return isAudioEndpointType(endpointType) ? requestRateOptions : concurrencyOptions;
 }
 
 function getSelectedProfile() {
@@ -70,12 +96,20 @@ function syncProfileFromForm() {
   if (profile.name.length === 0) {
     profile.name = ["inferencemax-h100"];
   }
-  profile.endpoint_type = endpointType.value === "chat" ? "chat" : "completions";
+  profile.endpoint_type = normalizeEndpointType(endpointType.value);
   profile.dataset_path = datasetPath.value.trim() || DEFAULT_DATASET_PATH;
-  profile.token_lengths = selectedValues(tokenSelect);
-  if (profile.token_lengths.length === 0) profile.token_lengths = ["none/1024"];
-  profile.concurrency = selectedValues(concurrencySelect).map((v) => Number(v)).filter((v) => Number.isFinite(v));
-  if (profile.concurrency.length === 0) profile.concurrency = [1, 16, 32, 64, 128, 256, 512];
+  if (isAudioEndpointType(profile.endpoint_type)) {
+    profile.token_lengths = [AUDIO_FIXED_TOKEN_LENGTH];
+  } else {
+    profile.token_lengths = selectedValues(tokenSelect);
+    if (profile.token_lengths.length === 0) profile.token_lengths = ["none/1024"];
+  }
+  const selectedRateValues = selectedValues(concurrencySelect).map((v) => Number(v)).filter((v) => Number.isFinite(v));
+  if (isAudioEndpointType(profile.endpoint_type)) {
+    profile.request_rate = selectedRateValues.length > 0 ? selectedRateValues : [...DEFAULT_REQUEST_RATE_OPTIONS];
+  } else {
+    profile.concurrency = selectedRateValues.length > 0 ? selectedRateValues : [1, 16, 32, 64, 128, 256, 512];
+  }
 }
 
 function renderProfileSelect() {
@@ -147,20 +181,39 @@ function renderProfileForm() {
 
   const endpointType = document.getElementById("benchmarkEndpointType");
   const datasetPath = document.getElementById("benchmarkDatasetPath");
+  const tokenInput = document.getElementById("benchmarkTokenLengthInput");
+  const tokenAddBtn = document.getElementById("benchmarkAddTokenLengthBtn");
+  const tokenSelect = document.getElementById("benchmarkTokenLengthsSelect");
+
+  const endpointTypeValue = normalizeEndpointType(profile.endpoint_type);
+  const isAudio = isAudioEndpointType(endpointTypeValue);
+  const effectiveTokenLengthOptions = isAudio ? [AUDIO_FIXED_TOKEN_LENGTH] : tokenLengthOptions;
+  const effectiveSelectedTokenLengths = isAudio ? [AUDIO_FIXED_TOKEN_LENGTH] : profile.token_lengths;
+  const selectedRates = isAudioEndpointType(endpointTypeValue) ? profile.request_rate : profile.concurrency;
 
   setSelectOptions(document.getElementById("benchmarkNameSelect"), nameOptions, profile.name);
-  setSelectOptions(document.getElementById("benchmarkTokenLengthsSelect"), tokenLengthOptions, profile.token_lengths);
+  setSelectOptions(tokenSelect, effectiveTokenLengthOptions, effectiveSelectedTokenLengths);
   setSelectOptions(
     document.getElementById("benchmarkConcurrencySelect"),
-    concurrencyOptions.map((v) => String(v)),
-    profile.concurrency.map((v) => String(v)),
+    getRateOptions(endpointTypeValue).map((v) => String(v)),
+    selectedRates.map((v) => String(v)),
   );
+  setRateLabel(endpointTypeValue);
 
   if (endpointType instanceof HTMLSelectElement) {
-    endpointType.value = profile.endpoint_type === "chat" ? "chat" : "completions";
+    endpointType.value = endpointTypeValue;
   }
   if (datasetPath instanceof HTMLInputElement) {
     datasetPath.value = profile.dataset_path || DEFAULT_DATASET_PATH;
+  }
+  if (tokenInput instanceof HTMLInputElement) {
+    tokenInput.disabled = isAudio;
+  }
+  if (tokenAddBtn instanceof HTMLButtonElement) {
+    tokenAddBtn.disabled = isAudio;
+  }
+  if (tokenSelect instanceof HTMLSelectElement) {
+    tokenSelect.disabled = isAudio;
   }
 }
 
@@ -187,13 +240,16 @@ export async function loadBenchmarkConfig() {
       throw new Error(data.detail || status);
     }
     profiles = Array.isArray(data.profiles) ? data.profiles.map(normalizeProfile) : [{ ...DEFAULT_PROFILE }];
-    nameOptions = Array.isArray(data.name_options) && data.name_options.length > 0 ? data.name_options.map((v) => String(v)) : ["inferencemax-h100"];
+    nameOptions = Array.isArray(data.name_options) && data.name_options.length > 0 ? data.name_options.map((v) => String(v)) : ["inferencemax-h100", "vllm-bench"];
     tokenLengthOptions = Array.isArray(data.token_length_options) && data.token_length_options.length > 0
       ? data.token_length_options.map((v) => String(v))
       : ["none/1024"];
     concurrencyOptions = Array.isArray(data.concurrency_options) && data.concurrency_options.length > 0
       ? data.concurrency_options.map((v) => Number(v)).filter((v) => Number.isFinite(v))
-      : [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
+      : [...DEFAULT_CONCURRENCY_OPTIONS];
+    requestRateOptions = Array.isArray(data.request_rate_options) && data.request_rate_options.length > 0
+      ? data.request_rate_options.map((v) => Number(v)).filter((v) => Number.isFinite(v))
+      : [...DEFAULT_REQUEST_RATE_OPTIONS];
     selectedProfileId = profiles[0]?.id || "default";
     await loadRuntimeBenchmarkProfile();
     rerenderAll();
@@ -216,6 +272,7 @@ export async function saveBenchmarkConfig({ quiet = false, rerenderAfter = true 
         dataset_path: p.dataset_path,
         token_lengths: p.token_lengths,
         concurrency: p.concurrency,
+        request_rate: p.request_rate,
       })),
     };
     const { ok, status, data } = await requestJson("/api/benchmark-config", {
@@ -227,13 +284,16 @@ export async function saveBenchmarkConfig({ quiet = false, rerenderAfter = true 
       throw new Error(data.detail || status);
     }
     profiles = Array.isArray(data.profiles) ? data.profiles.map(normalizeProfile) : [{ ...DEFAULT_PROFILE }];
-    nameOptions = Array.isArray(data.name_options) && data.name_options.length > 0 ? data.name_options.map((v) => String(v)) : ["inferencemax-h100"];
+    nameOptions = Array.isArray(data.name_options) && data.name_options.length > 0 ? data.name_options.map((v) => String(v)) : ["inferencemax-h100", "vllm-bench"];
     tokenLengthOptions = Array.isArray(data.token_length_options) && data.token_length_options.length > 0
       ? data.token_length_options.map((v) => String(v))
       : ["none/1024"];
     concurrencyOptions = Array.isArray(data.concurrency_options) && data.concurrency_options.length > 0
       ? data.concurrency_options.map((v) => Number(v)).filter((v) => Number.isFinite(v))
-      : [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
+      : [...DEFAULT_CONCURRENCY_OPTIONS];
+    requestRateOptions = Array.isArray(data.request_rate_options) && data.request_rate_options.length > 0
+      ? data.request_rate_options.map((v) => Number(v)).filter((v) => Number.isFinite(v))
+      : [...DEFAULT_REQUEST_RATE_OPTIONS];
     if (!profiles.some((p) => p.id === selectedProfileId)) {
       selectedProfileId = profiles[0]?.id || "default";
     }
@@ -304,6 +364,11 @@ function deleteProfile() {
 }
 
 function addTokenLengthOption() {
+  const profile = getSelectedProfile();
+  if (profile && isAudioEndpointType(profile.endpoint_type)) {
+    return;
+  }
+
   const input = document.getElementById("benchmarkTokenLengthInput");
   if (!(input instanceof HTMLInputElement)) return;
   const text = input.value.trim();
@@ -314,7 +379,6 @@ function addTokenLengthOption() {
   if (!tokenLengthOptions.includes(text)) {
     tokenLengthOptions.push(text);
   }
-  const profile = getSelectedProfile();
   if (profile && !profile.token_lengths.includes(text)) {
     profile.token_lengths.push(text);
   }
@@ -349,7 +413,18 @@ export function initBenchmarkConfigFeature() {
   addTokenBtn.addEventListener("click", addTokenLengthOption);
   reloadBtn.addEventListener("click", loadBenchmarkConfig);
   nameSelect.addEventListener("change", scheduleBenchmarkAutoSave);
-  endpointType.addEventListener("change", scheduleBenchmarkAutoSave);
+  endpointType.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement)) return;
+    const profile = getSelectedProfile();
+    if (!profile) return;
+    profile.endpoint_type = normalizeEndpointType(target.value);
+    if (isAudioEndpointType(profile.endpoint_type)) {
+      profile.token_lengths = [AUDIO_FIXED_TOKEN_LENGTH];
+    }
+    renderProfileForm();
+    scheduleBenchmarkAutoSave();
+  });
   datasetPath.addEventListener("input", scheduleBenchmarkAutoSave);
   tokenLengthsSelect.addEventListener("change", scheduleBenchmarkAutoSave);
   concurrencySelect.addEventListener("change", scheduleBenchmarkAutoSave);
