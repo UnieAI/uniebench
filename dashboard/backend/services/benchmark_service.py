@@ -61,6 +61,10 @@ def _normalize_dataset_path(raw: Any) -> str:
     return text or DEFAULT_DATASET_PATH
 
 
+def _normalize_audio_meta_field(raw: Any) -> str:
+    return str(raw or "").strip()
+
+
 def _parse_token_length(text: str) -> Tuple[str, str | int] | None:
     raw = str(text or "").strip()
     if "/" not in raw:
@@ -124,6 +128,8 @@ def _default_profile() -> Dict[str, Any]:
         "name": list(DEFAULT_NAME_SELECTED),
         "endpoint_type": DEFAULT_ENDPOINT_TYPE,
         "dataset_path": DEFAULT_DATASET_PATH,
+        "subset": "",
+        "split": "",
         "token_lengths": list(DEFAULT_TOKEN_LENGTHS),
         "concurrency": list(DEFAULT_CONCURRENCY),
         "request_rate": list(DEFAULT_REQUEST_RATE),
@@ -155,6 +161,8 @@ def _profile_from_yaml_row(row: Any) -> Dict[str, Any] | None:
         "name": _normalize_name_list(cfg.get("name", [])),
         "endpoint_type": endpoint_type,
         "dataset_path": _normalize_dataset_path(cfg.get("dataset_path")),
+        "subset": _normalize_audio_meta_field(cfg.get("subset", "")),
+        "split": _normalize_audio_meta_field(cfg.get("split", "")),
         "token_lengths": _normalize_token_lengths(token_lengths_raw),
         "concurrency": _normalize_concurrency(cfg.get("concurrency", [])),
         "request_rate": _normalize_request_rate(cfg.get("request_rate", [])),
@@ -163,6 +171,8 @@ def _profile_from_yaml_row(row: Any) -> Dict[str, Any] | None:
         profile["token_lengths"] = list(DEFAULT_AUDIO_TOKEN_LENGTHS)
         profile["concurrency"] = []
     else:
+        profile["subset"] = ""
+        profile["split"] = ""
         profile["request_rate"] = []
     return profile
 
@@ -217,6 +227,8 @@ def save_benchmark_config(config_path: Path, lock: threading.Lock, payload_profi
             "name": _normalize_name_list(raw.get("name", []) if isinstance(raw, dict) else []),
             "endpoint_type": _normalize_endpoint_type(raw.get("endpoint_type") if isinstance(raw, dict) else ""),
             "dataset_path": _normalize_dataset_path(raw.get("dataset_path") if isinstance(raw, dict) else ""),
+            "subset": _normalize_audio_meta_field(raw.get("subset", "") if isinstance(raw, dict) else ""),
+            "split": _normalize_audio_meta_field(raw.get("split", "") if isinstance(raw, dict) else ""),
             "token_lengths": _normalize_token_lengths(raw.get("token_lengths", []) if isinstance(raw, dict) else []),
             "concurrency": _normalize_concurrency(raw.get("concurrency", []) if isinstance(raw, dict) else []),
             "request_rate": _normalize_request_rate(raw.get("request_rate", []) if isinstance(raw, dict) else []),
@@ -225,6 +237,8 @@ def save_benchmark_config(config_path: Path, lock: threading.Lock, payload_profi
             profile["token_lengths"] = list(DEFAULT_AUDIO_TOKEN_LENGTHS)
             profile["concurrency"] = []
         else:
+            profile["subset"] = ""
+            profile["split"] = ""
             profile["request_rate"] = []
         normalized.append(profile)
 
@@ -253,6 +267,8 @@ def save_benchmark_config(config_path: Path, lock: threading.Lock, payload_profi
             "token_lengths": token_lengths_yaml,
         }
         if profile["endpoint_type"] == "audio":
+            config_payload["subset"] = profile["subset"]
+            config_payload["split"] = profile["split"]
             config_payload["request_rate"] = profile["request_rate"]
         else:
             config_payload["concurrency"] = profile["concurrency"]

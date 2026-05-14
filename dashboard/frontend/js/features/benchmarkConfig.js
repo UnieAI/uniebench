@@ -8,6 +8,8 @@ const DEFAULT_PROFILE = {
   name: ["inferencemax-h100"],
   endpoint_type: "completions",
   dataset_path: DEFAULT_DATASET_PATH,
+  subset: "",
+  split: "",
   token_lengths: ["none/1024"],
   concurrency: [1, 16, 32, 64, 128, 256, 512],
   request_rate: [1, 2, 4, 8, 16, 32, 64, 128, 192, 256, 320, 384],
@@ -44,6 +46,8 @@ function normalizeProfile(raw) {
     name: Array.isArray(raw.name) && raw.name.length > 0 ? raw.name.map((v) => String(v)).filter(Boolean) : ["inferencemax-h100"],
     endpoint_type: normalizeEndpointType(raw.endpoint_type),
     dataset_path: String(raw.dataset_path || "").trim() || DEFAULT_DATASET_PATH,
+    subset: String(raw.subset || "").trim(),
+    split: String(raw.split || "").trim(),
     token_lengths: Array.isArray(raw.token_lengths) && raw.token_lengths.length > 0 ? raw.token_lengths.map((v) => String(v)).filter(Boolean) : ["none/1024"],
     concurrency: Array.isArray(raw.concurrency) && raw.concurrency.length > 0 ? raw.concurrency.map((v) => Number(v)).filter((v) => Number.isFinite(v)) : [1, 16, 32, 64, 128, 256, 512],
     request_rate: Array.isArray(raw.request_rate) && raw.request_rate.length > 0 ? raw.request_rate.map((v) => Number(v)).filter((v) => Number.isFinite(v)) : [1, 2, 4, 8, 16, 32, 64, 128, 192, 256, 320, 384],
@@ -87,6 +91,8 @@ function syncProfileFromForm() {
   const nameSelect = document.getElementById("benchmarkNameSelect");
   const endpointType = document.getElementById("benchmarkEndpointType");
   const datasetPath = document.getElementById("benchmarkDatasetPath");
+  const subset = document.getElementById("benchmarkSubset");
+  const split = document.getElementById("benchmarkSplit");
   const tokenSelect = document.getElementById("benchmarkTokenLengthsSelect");
   const concurrencySelect = document.getElementById("benchmarkConcurrencySelect");
 
@@ -98,6 +104,13 @@ function syncProfileFromForm() {
   }
   profile.endpoint_type = normalizeEndpointType(endpointType.value);
   profile.dataset_path = datasetPath.value.trim() || DEFAULT_DATASET_PATH;
+  if (isAudioEndpointType(profile.endpoint_type)) {
+    profile.subset = subset instanceof HTMLInputElement ? subset.value.trim() : "";
+    profile.split = split instanceof HTMLInputElement ? split.value.trim() : "";
+  } else {
+    profile.subset = "";
+    profile.split = "";
+  }
   if (isAudioEndpointType(profile.endpoint_type)) {
     profile.token_lengths = [AUDIO_FIXED_TOKEN_LENGTH];
   } else {
@@ -181,6 +194,8 @@ function renderProfileForm() {
 
   const endpointType = document.getElementById("benchmarkEndpointType");
   const datasetPath = document.getElementById("benchmarkDatasetPath");
+  const subset = document.getElementById("benchmarkSubset");
+  const split = document.getElementById("benchmarkSplit");
   const tokenInput = document.getElementById("benchmarkTokenLengthInput");
   const tokenAddBtn = document.getElementById("benchmarkAddTokenLengthBtn");
   const tokenSelect = document.getElementById("benchmarkTokenLengthsSelect");
@@ -205,6 +220,14 @@ function renderProfileForm() {
   }
   if (datasetPath instanceof HTMLInputElement) {
     datasetPath.value = profile.dataset_path || DEFAULT_DATASET_PATH;
+  }
+  if (subset instanceof HTMLInputElement) {
+    subset.value = isAudio ? (profile.subset || "") : "";
+    subset.disabled = !isAudio;
+  }
+  if (split instanceof HTMLInputElement) {
+    split.value = isAudio ? (profile.split || "") : "";
+    split.disabled = !isAudio;
   }
   if (tokenInput instanceof HTMLInputElement) {
     tokenInput.disabled = isAudio;
@@ -270,6 +293,8 @@ export async function saveBenchmarkConfig({ quiet = false, rerenderAfter = true 
         name: p.name,
         endpoint_type: p.endpoint_type,
         dataset_path: p.dataset_path,
+        subset: p.subset,
+        split: p.split,
         token_lengths: p.token_lengths,
         concurrency: p.concurrency,
         request_rate: p.request_rate,
@@ -397,10 +422,12 @@ export function initBenchmarkConfigFeature() {
   const nameSelect = document.getElementById("benchmarkNameSelect");
   const endpointType = document.getElementById("benchmarkEndpointType");
   const datasetPath = document.getElementById("benchmarkDatasetPath");
+  const subset = document.getElementById("benchmarkSubset");
+  const split = document.getElementById("benchmarkSplit");
   const tokenLengthsSelect = document.getElementById("benchmarkTokenLengthsSelect");
   const concurrencySelect = document.getElementById("benchmarkConcurrencySelect");
 
-  if (!profileSelect || !runtimeProfileSelect || !addProfileBtn || !deleteProfileBtn || !addTokenBtn || !reloadBtn || !(nameSelect instanceof HTMLSelectElement) || !(endpointType instanceof HTMLSelectElement) || !(datasetPath instanceof HTMLInputElement) || !(tokenLengthsSelect instanceof HTMLSelectElement) || !(concurrencySelect instanceof HTMLSelectElement)) return;
+  if (!profileSelect || !runtimeProfileSelect || !addProfileBtn || !deleteProfileBtn || !addTokenBtn || !reloadBtn || !(nameSelect instanceof HTMLSelectElement) || !(endpointType instanceof HTMLSelectElement) || !(datasetPath instanceof HTMLInputElement) || !(subset instanceof HTMLInputElement) || !(split instanceof HTMLInputElement) || !(tokenLengthsSelect instanceof HTMLSelectElement) || !(concurrencySelect instanceof HTMLSelectElement)) return;
 
   profileSelect.addEventListener("change", onProfileChange);
   runtimeProfileSelect.addEventListener("change", (event) => {
@@ -426,6 +453,8 @@ export function initBenchmarkConfigFeature() {
     scheduleBenchmarkAutoSave();
   });
   datasetPath.addEventListener("input", scheduleBenchmarkAutoSave);
+  subset.addEventListener("input", scheduleBenchmarkAutoSave);
+  split.addEventListener("input", scheduleBenchmarkAutoSave);
   tokenLengthsSelect.addEventListener("change", scheduleBenchmarkAutoSave);
   concurrencySelect.addEventListener("change", scheduleBenchmarkAutoSave);
 }
