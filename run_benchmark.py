@@ -9,7 +9,6 @@ from benchmark.vllm_bench import vllm_bench
 from log_utils import consume_verbosity_flags, configure_logging
 
 benchmark_map = {
-    'genai-perf': genai_perf,
     'inferencemax-h100': inferencemax_h100,
     'vllm-bench': vllm_bench,
 }
