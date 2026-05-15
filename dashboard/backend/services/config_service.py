@@ -71,6 +71,12 @@ def get_sheet_name_options(sheet_id_list_path: Path) -> list[str]:
         return []
     try:
         loaded = json.loads(sheet_id_list_path.read_text(encoding="utf-8"))
+        # Flatten nested dictionaries to collect all keys
+        all_keys = set(loaded.keys())
+        for value in loaded.values():
+            if isinstance(value, dict):
+                all_keys.update(value.keys())
+        loaded = all_keys
     except Exception:
         return []
     if not isinstance(loaded, dict):

@@ -97,6 +97,8 @@ def get_rocm_version() -> str:
 
 
 def get_sample_output(cfg) -> str:
+    if cfg.benchmark.endpoint_type == 'audio':
+        return 'not supported'
     url = f"{cfg.server.base_url}:{cfg.server.port}/v1/completions"
     payload = {
         "model": cfg.server.model_id,
@@ -110,7 +112,7 @@ def get_sample_output(cfg) -> str:
         response.raise_for_status()
         data = response.json()
     except requests.RequestException as exc:
-        return f"request_failed: {exc}"
+        return f"request_failed or not support(audio): {exc}"
     except ValueError as exc:
         return f"invalid_json: {exc}"
 

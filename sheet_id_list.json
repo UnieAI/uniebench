@@ -1,5 +1,27 @@
 {
     "Benchmark-v2":         "https://docs.google.com/spreadsheets/d/1mQGFurc2fVgQjkZOgnEEeQNgVTSP2hcMP478GZRjob8",
     "Benchmark-Pro6000":    "https://docs.google.com/spreadsheets/d/1kGyReGCZ5vr4jfmeuBbMRC7quQAHLLwgADoipFrNPlI",
-    "Benchmark-A100":       "https://docs.google.com/spreadsheets/d/1mrJrx49LibB22OpXbEhoUnhG_H52iNc5g0B6IqbzLus"
+    "Benchmark-A100":       "https://docs.google.com/spreadsheets/d/1mrJrx49LibB22OpXbEhoUnhG_H52iNc5g0B6IqbzLus",
+
+    "2026Q2": {
+        "Winston": "https://docs.google.com/spreadsheets/d/1JBGf2LjcDHoN-n1opJUrIlhwLp0PHh8KMATybwrgZJM",
+        "H100": "https://docs.google.com/spreadsheets/d/1QRqJ0NFpMKbV3CMJ36uHXSPBISwUOhtNSpCVGXpJMGg",
+        "Fabian": "https://docs.google.com/spreadsheets/d/1i3J0BoGmajeLdqM0shVIuS_frQlHPS_hQ7CzOcyFnmo",
+        "Charmander": "https://docs.google.com/spreadsheets/d/1oS4YIm_Ide24e3eTtUzWdKzViIMvNFEFwB1tuzubhlk",
+        "Others": "https://docs.google.com/spreadsheets/d/15VSOoX_Coj-F38h13cWLYXeEjmDUALuGKiI8J6eGc9U"
+    },
+    "2026Q3": {
+        "Winston": "https://docs.google.com/spreadsheets/d/1QRkSfkC4dQQ522n4lD3zqVVm4jP15H4IN8nhm8NwMWw",
+        "H100": "https://docs.google.com/spreadsheets/d/1D6A9uZB48UsOMOU2OnkzEfc4vMaQFj2kEynjSIHDkpI",
+        "Fabian": "https://docs.google.com/spreadsheets/d/1Zv7ByhNQcIsmx8oGy9ZZVR3pGLgNJvrXqTCnoQ_yJmk",
+        "Charmander": "https://docs.google.com/spreadsheets/d/1d447mqKXqnmjV9AX8pBz3LkKTKBq5cqciLarb9g2bAU",
+        "Others": "https://docs.google.com/spreadsheets/d/1umPihSYisFGat7HqeVOJIMtDqyKRKeP58YO3vpcPsiI"
+    },
+    "2026Q4": {
+        "Winston": "https://docs.google.com/spreadsheets/d/1We8hEKOU62BPwjFnxo1OI3FRB-5Eyj_x-2_y7796Wd8",
+        "H100": "https://docs.google.com/spreadsheets/d/1bXBuP_IMqpsaABGmT8DiqipLs9pjMPK2viQJ1cxMVhc",
+        "Fabian": "https://docs.google.com/spreadsheets/d/1dmqb6pGvxu5HgNpksaPLiywXCoyV3LDFB864-PZJcqM",
+        "Charmander": "https://docs.google.com/spreadsheets/d/17XbHKYzTTgHamjoihI4U47gjr453JUQRGc3gb5u5IxI",
+        "Others": "https://docs.google.com/spreadsheets/d/1Nfh3lkRo6QMoPR9dpLdj8vnFJphXHNOILNhkHwcW4gI"
+    }
 }

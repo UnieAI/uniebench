@@ -12,7 +12,7 @@ from datetime import datetime as dt
 from log_utils import TRACE_LEVEL
 from benchmark.runtime_metadata import collect_runtime_metadata
 
-def inferencemax_h100(cfg: DictConfig, container, token_lengths, concurrency, seed):
+def inferencemax_h100(cfg: DictConfig, container, token_lengths, concurrency, seed, num_prompts):
     logging.info('run benchmark inferencemax-h100...')
     benchmark(cfg, token_lengths, concurrency, seed)
     logging.info('standardize benchmark result...')

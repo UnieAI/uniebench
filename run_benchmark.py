@@ -5,9 +5,17 @@ from hydra import main
 
 from benchmark.genai_perf import genai_perf
 from benchmark.inferencemax_h100 import inferencemax_h100
+from benchmark.vllm_bench import vllm_bench
 from log_utils import consume_verbosity_flags, configure_logging
 
-def run_benchmark(cfg: DictConfig, benchmark_name, container, token_lengths, concurrency, seed):
+benchmark_map = {
+    'genai-perf': genai_perf,
+    'inferencemax-h100': inferencemax_h100,
+    'vllm-bench': vllm_bench,
+}
+
+def run_benchmark(cfg: DictConfig, args: dict):
+    benchmark_name, container, token_lengths, concurrency, seed, request_rate = args.values()
     logging.debug(
         "benchmark dispatch: name=%s container=%s input_len=%s output_len=%s concurrency=%s seed=%s",
         benchmark_name,
@@ -16,12 +24,12 @@ def run_benchmark(cfg: DictConfig, benchmark_name, container, token_lengths, con
         token_lengths.output_len,
         concurrency,
         seed,
+        request_rate
     )
-    if benchmark_name == 'genai-perf':
-        genai_perf(cfg, container, token_lengths, concurrency)
-    elif benchmark_name == 'inferencemax-h100':
-        inferencemax_h100(cfg, container, token_lengths, concurrency, seed)
-    else:
+    try:
+        benchmark = benchmark_map[benchmark_name]
+        benchmark(cfg, container, token_lengths, concurrency, seed, request_rate)
+    except KeyError:
         logging.error("benchmark failed: unsupported benchmark '%s'", benchmark_name)
         raise ValueError(f"unsupported benchmark: {benchmark_name}")
 
@@ -49,7 +57,7 @@ def main(cfg: DictConfig) -> None:
             for concurrency in cfg.benchmark.concurrency:
                 for name in cfg.benchmark.name:
                     seed = random.randint(0, 2147483647)
-                    run_benchmark(cfg, name, container, token_lengths, concurrency, seed)
+                    run_benchmark(cfg, {name, container, token_lengths, concurrency, seed})
 
 
 if __name__ == "__main__":

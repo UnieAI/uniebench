@@ -82,11 +82,11 @@ def _export_to_csv_fallback(test_name: str, worksheet_name: str, header, rows):
         'service_account.json not found; exported to CSV fallback: %s',
         output_path,
     )
-    print(f'CSV fallback output: {output_path}')
+    logging.info(f'CSV fallback output: {output_path}')
 
 def export(test_name: str, sheet_name: str, worksheet_name = None):
     worksheet_name = worksheet_name or test_name
-    print('sheet_name', sheet_name)
+    logging.info('sheet_name', sheet_name)
     header, rows = _collect_rows(test_name)
 
     # 1. Google Sheets 權限設置（將 service_account.json 放在腳本同目錄下）
@@ -101,7 +101,19 @@ def export(test_name: str, sheet_name: str, worksheet_name = None):
 
     # 2. 打開 Google Sheet
     with open('sheet_id_list.json', 'r', encoding='utf8') as f:
-        sheet_id_map = json.load(f)
+        raw_data = json.load(f)
+    
+    def flatten_sheet_map(data, prefix=""):
+        flat = {}
+        for key, value in data.items():
+            if isinstance(value, str):
+                flat_key = prefix + key if prefix else key
+                flat[flat_key] = value
+            elif isinstance(value, dict):
+                flat.update(flatten_sheet_map(value, prefix + key + "/"))
+        return flat
+    
+    sheet_id_map = flatten_sheet_map(raw_data)
     if sheet_name not in sheet_id_map:
         raise ValueError(f'sheet_name "{sheet_name}" not found in sheet_id_list.json')
     sheet_value = sheet_id_map[sheet_name]
@@ -109,7 +121,8 @@ def export(test_name: str, sheet_name: str, worksheet_name = None):
         SHEET_ID = sheet_value.split('/d/', 1)[1].split('/', 1)[0]
     else:
         SHEET_ID = sheet_value
-    print('SHEET_ID', SHEET_ID)
+    logging.info('SHEET_ID', SHEET_ID)
+    logging.info(f'path: https://docs.google.com/spreadsheets/d/{SHEET_ID}')
 
     sheet = gc.open_by_key(SHEET_ID)
 
@@ -135,7 +148,19 @@ if __name__ == '__main__':
 
     # 讀取 sheet_id_list.json，讓使用者選擇輸出目的地
     with open('sheet_id_list.json', 'r', encoding='utf8') as f:
-        sheet_id_map = json.load(f)
+        raw_data = json.load(f)
+    
+    def flatten_sheet_map(data, prefix=""):
+        flat = {}
+        for key, value in data.items():
+            if isinstance(value, str):
+                flat_key = prefix + key if prefix else key
+                flat[flat_key] = value
+            elif isinstance(value, dict):
+                flat.update(flatten_sheet_map(value, prefix + key + "/"))
+        return flat
+    
+    sheet_id_map = flatten_sheet_map(raw_data)
     sheet_names = list(sheet_id_map.keys())
     print('Available sheet names:')
     for name in sheet_names:

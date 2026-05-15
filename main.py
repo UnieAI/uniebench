@@ -36,11 +36,12 @@ def run_single_server(cfg: DictConfig) -> None:
         cfg.autotest.name = f'autotest_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
 
     os.makedirs(f'./results/{cfg.autotest.name}', exist_ok=True)
+    concurrency_or_request_rate_length = len(cfg.benchmark.concurrency) if 'concurrency' in cfg.benchmark else len(cfg.benchmark.request_rate)
     total_rounds = (
         len(cfg.server.container)
         * len(cfg.benchmark.name)
         * len(cfg.benchmark.token_lengths)
-        * len(cfg.benchmark.concurrency)
+        * concurrency_or_request_rate_length
     )
     round_index = 0
 
@@ -49,7 +50,7 @@ def run_single_server(cfg: DictConfig) -> None:
         # run benchmark (inner loop)
         for benchmark_name in cfg.benchmark.name:
             for token_lengths in cfg.benchmark.token_lengths:
-                for c_index in range(len(cfg.benchmark.concurrency)):
+                for c_index in range(concurrency_or_request_rate_length):
                     round_index += 1
                     if 'port' in container:
                         cfg.server.port = container.port
@@ -69,15 +70,16 @@ def run_single_server(cfg: DictConfig) -> None:
                             container.name = cfg.server.name
                         else:
                             container.name = f'server_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
-                    concurrency = cfg.benchmark.concurrency[c_index]
+                    concurrency = cfg.benchmark.concurrency[c_index] if 'concurrency' in cfg.benchmark else None
+                    request_rate = cfg.benchmark.request_rate[c_index] if 'request_rate' in cfg.benchmark else None
+
                     logging.info(
-                        "round %s/%s | benchmark=%s | container=%s | input_len=%s | output_len=%s | concurrency=%s",
+                        "round %s/%s | benchmark=%s | container=%s | token_lengths=%s | concurrency=%s",
                         round_index,
                         total_rounds,
                         benchmark_name,
                         container.name,
-                        token_lengths.input_len,
-                        token_lengths.output_len,
+                        token_lengths,
                         concurrency,
                     )
                     logging.log(TRACE_LEVEL, "round container config: %s", container)
@@ -127,10 +129,17 @@ def run_single_server(cfg: DictConfig) -> None:
                         seed = cfg.benchmark.seeds[c_index % len(cfg.benchmark.seeds)]
                     try:
                         logging.info("benchmark running: %s", benchmark_name)
-                        run_benchmark(cfg, benchmark_name, container, token_lengths, concurrency, seed)
+                        run_benchmark(cfg, {
+                            'benchmark_name': benchmark_name, 
+                            'container': container, 
+                            'token_lengths': token_lengths, 
+                            'concurrency': concurrency, 
+                            'seed': seed,
+                            'request_rate': request_rate,
+                        })
                         logging.info("benchmark completed: %s", benchmark_name)
                     except BaseException as e:
-                        logging.error(f'benchmark failed.  name: {benchmark_name}, token_lengths: {token_lengths.input_len}/{token_lengths.output_len}, concurrency: {concurrency}')
+                        logging.error(f'benchmark failed.  name: {benchmark_name}, token_lengths: {token_lengths}, concurrency: {concurrency}')
                         logging.error(e)
 
                     # stop server

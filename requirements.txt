@@ -6,3 +6,10 @@ gspread
 google-oauth2-tool
 aiohttp
 datasets
+
+pyarrow 
+soundfile 
+numpy 
+torchcodec
+vllm[bench]
+vllm[audio]
