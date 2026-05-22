@@ -1,14 +1,14 @@
-import logging
 import os
 import signal
+import shutil
+import sys
 import time
 from typing import Optional, Tuple
-
+import logging
+from log_utils import consume_verbosity_flags, configure_logging, TRACE_LEVEL, TRACE2_LEVEL
 import docker
 from hydra import main
 from omegaconf import DictConfig
-
-from log_utils import consume_verbosity_flags, configure_logging, TRACE_LEVEL
 
 
 def _is_host_shell_script(container_path: Optional[str]) -> bool:
@@ -151,10 +151,36 @@ def _stop_shell_process(name: str, pid: Optional[int]) -> None:
     raise RuntimeError(f"server shutdown failed: process group {target_pid} is still alive after SIGKILL")
 
 
+def _kill_all_gpus_pid():
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["nvidia-smi", "--query-compute-apps=pid", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            pids = [int(line.strip()) for line in result.stdout.strip().split('\n') if line.strip()]
+            logging.info("killing gpu processes with pids: %s", pids)
+            for pid in pids:
+                try:
+                    logging.info('kill pid %s', pid)
+                    subprocess.run(["sudo", "kill", "-9", str(pid)], check=True)
+                    logging.info("killed gpu process with pid %s", pid)
+                except subprocess.CalledProcessError as e:
+                    logging.warning("failed to kill pid %s with sudo kill: %s", pid, e)
+                except (ProcessLookupError, OSError) as e:
+                    logging.warning("failed to kill pid %s: %s", pid, e)
+    except (FileNotFoundError, subprocess.TimeoutExpired, Exception) as e:
+        logging.warning("failed to kill gpu processes: %s", e)
+
+
 def stop_container(cfg: DictConfig, name: str, container_path: Optional[str] = None, pid: Optional[int] = None):
     logging.info("stop container: %s", name)
     if _is_host_shell_script(container_path):
         _stop_shell_process(name, pid)
+        _kill_all_gpus_pid()
         return
 
     try:
@@ -170,12 +196,12 @@ def stop_container(cfg: DictConfig, name: str, container_path: Optional[str] = N
         logging.error("server shutdown failed: %s", exc)
         raise
 
-
 @main(config_path="config", config_name="config", version_base="1.2")
 def main(cfg: DictConfig) -> None:
     # start server (outer loop)
     for container in cfg.server.container:
         stop_container(cfg, container.name, getattr(container, "path", None))
+
 
 if __name__ == "__main__":
     configure_logging(consume_verbosity_flags())

@@ -124,9 +124,7 @@ def run_single_server(cfg: DictConfig) -> None:
                                 raise
                         continue
 
-                    seed = random.randint(0, 2147483647)
-                    if 'seeds' in cfg.benchmark and len(cfg.benchmark.seeds) > 0:
-                        seed = cfg.benchmark.seeds[c_index % len(cfg.benchmark.seeds)]
+                    seed = 0
                     try:
                         logging.info("benchmark running: %s", benchmark_name)
                         run_benchmark(cfg, {

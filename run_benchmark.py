@@ -3,13 +3,12 @@ import logging
 import random
 from hydra import main
 
-from benchmark.genai_perf import genai_perf
-from benchmark.inferencemax_h100 import inferencemax_h100
+from benchmark.inferencemax import inferencemax
 from benchmark.vllm_bench import vllm_bench
 from log_utils import consume_verbosity_flags, configure_logging
 
 benchmark_map = {
-    'inferencemax-h100': inferencemax_h100,
+    'inferencemax': inferencemax,
     'vllm-bench': vllm_bench,
 }
 

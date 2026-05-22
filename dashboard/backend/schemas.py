@@ -58,7 +58,7 @@ class GlobalConfigPayload(BaseModel):
 
 class BenchmarkProfilePayload(BaseModel):
     id: str = "default"
-    name: list[str] = ["inferencemax-h100"]
+    name: list[str] = ["inferencemax"]
     endpoint_type: str = "completions"
     dataset_path: str = "/workspace/jeff/Benchmark-Autotest/datasets/neural-bridge/rag-dataset-12000/data/train-00000-of-00001-9df3a936e1f63191.parquet"
     subset: str = ""

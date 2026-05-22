@@ -12,15 +12,15 @@ from datetime import datetime as dt
 from log_utils import TRACE_LEVEL
 from benchmark.runtime_metadata import collect_runtime_metadata
 
-def inferencemax_h100(cfg: DictConfig, container, token_lengths, concurrency, seed, num_prompts):
-    logging.info('run benchmark inferencemax-h100...')
+def inferencemax(cfg: DictConfig, container, token_lengths, concurrency, seed, num_prompts):
+    logging.info('run benchmark inferencemax...')
     benchmark(cfg, token_lengths, concurrency, seed)
     logging.info('standardize benchmark result...')
     benchmark_post_processing(cfg, container, concurrency, seed)
     logging.info('benchcmark completed')
 
 def benchmark(cfg: DictConfig, token_lengths, concurrency, seed):
-    RESULT_ROOT = f'./results/{cfg.autotest.name}/inferencemax_h100'
+    RESULT_ROOT = f'./results/{cfg.autotest.name}/inferencemax'
     os.makedirs(RESULT_ROOT, exist_ok=True)
 
     if cfg.benchmark.endpoint_type == 'chat':
@@ -31,7 +31,7 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency, seed):
         endpoint = '/v1/completions'
 
     cmd = [
-        'python3', 'benchmark/inferencemax-h100/bench_serving/benchmark_serving.py',
+        'python3', 'benchmark/inferencemax/bench_serving/benchmark_serving.py',
         '--backend', backend,
         '--endpoint', endpoint,
         '--model', cfg.server.model_id,
@@ -63,7 +63,7 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency, seed):
         ])
 
 
-    logging.debug("run inferencemax-h100 command")
+    logging.debug("run inferencemax command")
     logging.log(TRACE_LEVEL, "command: %s", cmd)
     try:
         subprocess.run(
@@ -74,11 +74,11 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency, seed):
             check=True,
         )
     except subprocess.CalledProcessError as exc:
-        logging.error("benchmark command failed (inferencemax-h100), returncode=%s", exc.returncode)
+        logging.error("benchmark command failed (inferencemax), returncode=%s", exc.returncode)
         raise
 
 def benchmark_post_processing(cfg: DictConfig, container, concurrency, seed = None):
-    RESULT_ROOT = f'./results/{cfg.autotest.name}/inferencemax_h100'
+    RESULT_ROOT = f'./results/{cfg.autotest.name}/inferencemax'
     os.makedirs(RESULT_ROOT, exist_ok=True)
 
     benchmark_date = dt.now().strftime('%Y%m%d-%H%M%S')
@@ -94,7 +94,7 @@ def benchmark_post_processing(cfg: DictConfig, container, concurrency, seed = No
         "platform": cfg.server.platform,
         "engine": container.name,
         "tp_size": container.tp_size,
-        "benchmark": 'inferencemax-h100',
+        "benchmark": 'inferencemax',
         "remark": cfg.server.remark if 'remark' in cfg.server else '',
         "seed": seed if seed is not None else "random",
 

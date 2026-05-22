@@ -7,8 +7,8 @@ import yaml
 
 DEFAULT_PROFILE_ID = "default"
 DEFAULT_DATASET_PATH = "/workspace/jeff/Benchmark-Autotest/datasets/neural-bridge/rag-dataset-12000/data/train-00000-of-00001-9df3a936e1f63191.parquet"
-DEFAULT_NAME_OPTIONS = ["inferencemax-h100", "vllm-bench"]
-DEFAULT_NAME_SELECTED = ["inferencemax-h100"]
+DEFAULT_NAME_OPTIONS = ["inferencemax", "vllm-bench"]
+DEFAULT_NAME_SELECTED = ["inferencemax"]
 DEFAULT_ENDPOINT_TYPE = "completions"
 DEFAULT_TOKEN_LENGTHS = ["none/1024"]
 DEFAULT_AUDIO_TOKEN_LENGTHS = ["none/none"]

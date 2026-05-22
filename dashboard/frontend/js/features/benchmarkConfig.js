@@ -5,7 +5,7 @@ import { escapeHtml, setStatus } from "../core/ui.js";
 const DEFAULT_DATASET_PATH = "/workspace/jeff/Benchmark-Autotest/datasets/neural-bridge/rag-dataset-12000/data/train-00000-of-00001-9df3a936e1f63191.parquet";
 const DEFAULT_PROFILE = {
   id: "default",
-  name: ["inferencemax-h100"],
+  name: ["inferencemax"],
   endpoint_type: "completions",
   dataset_path: DEFAULT_DATASET_PATH,
   subset: "",
@@ -22,7 +22,7 @@ const AUDIO_FIXED_TOKEN_LENGTH = "none/none";
 let profiles = [];
 let selectedProfileId = "default";
 let runtimeBenchmarkProfileId = "";
-let nameOptions = ["inferencemax-h100", "vllm-bench"];
+let nameOptions = ["inferencemax", "vllm-bench"];
 let tokenLengthOptions = ["none/1024"];
 let concurrencyOptions = [...DEFAULT_CONCURRENCY_OPTIONS];
 let requestRateOptions = [...DEFAULT_REQUEST_RATE_OPTIONS];
@@ -43,7 +43,7 @@ function normalizeProfile(raw) {
   if (!raw || typeof raw !== "object") return { ...DEFAULT_PROFILE };
   return {
     id: String(raw.id || "default").trim() || "default",
-    name: Array.isArray(raw.name) && raw.name.length > 0 ? raw.name.map((v) => String(v)).filter(Boolean) : ["inferencemax-h100"],
+    name: Array.isArray(raw.name) && raw.name.length > 0 ? raw.name.map((v) => String(v)).filter(Boolean) : ["inferencemax"],
     endpoint_type: normalizeEndpointType(raw.endpoint_type),
     dataset_path: String(raw.dataset_path || "").trim() || DEFAULT_DATASET_PATH,
     subset: String(raw.subset || "").trim(),
@@ -100,7 +100,7 @@ function syncProfileFromForm() {
 
   profile.name = selectedValues(nameSelect);
   if (profile.name.length === 0) {
-    profile.name = ["inferencemax-h100"];
+    profile.name = ["inferencemax"];
   }
   profile.endpoint_type = normalizeEndpointType(endpointType.value);
   profile.dataset_path = datasetPath.value.trim() || DEFAULT_DATASET_PATH;
@@ -263,7 +263,7 @@ export async function loadBenchmarkConfig() {
       throw new Error(data.detail || status);
     }
     profiles = Array.isArray(data.profiles) ? data.profiles.map(normalizeProfile) : [{ ...DEFAULT_PROFILE }];
-    nameOptions = Array.isArray(data.name_options) && data.name_options.length > 0 ? data.name_options.map((v) => String(v)) : ["inferencemax-h100", "vllm-bench"];
+    nameOptions = Array.isArray(data.name_options) && data.name_options.length > 0 ? data.name_options.map((v) => String(v)) : ["inferencemax", "vllm-bench"];
     tokenLengthOptions = Array.isArray(data.token_length_options) && data.token_length_options.length > 0
       ? data.token_length_options.map((v) => String(v))
       : ["none/1024"];
@@ -309,7 +309,7 @@ export async function saveBenchmarkConfig({ quiet = false, rerenderAfter = true 
       throw new Error(data.detail || status);
     }
     profiles = Array.isArray(data.profiles) ? data.profiles.map(normalizeProfile) : [{ ...DEFAULT_PROFILE }];
-    nameOptions = Array.isArray(data.name_options) && data.name_options.length > 0 ? data.name_options.map((v) => String(v)) : ["inferencemax-h100", "vllm-bench"];
+    nameOptions = Array.isArray(data.name_options) && data.name_options.length > 0 ? data.name_options.map((v) => String(v)) : ["inferencemax", "vllm-bench"];
     tokenLengthOptions = Array.isArray(data.token_length_options) && data.token_length_options.length > 0
       ? data.token_length_options.map((v) => String(v))
       : ["none/1024"];

@@ -1,15 +1,15 @@
 autotest:
-  name: benchmark-test-01
-  sheet_name: 2026Q2/Winston
+  name: pyarmor-cuda-129-1.7.0-test1
+  sheet_name: 2026Q2/Charmander
 server:
-  platform: Winston
+  platform: Charmander
   id: default
 benchmark:
   id: text
 healthcheck:
   url: ${server.base_url}:${server.port}/health
   timeout: 5
-  max_tries: 100
+  max_tries: 150
   interval: 5.0
 default_config:
   server:
@@ -33,7 +33,7 @@ default_config:
   - id: text
     config:
       name:
-      - inferencemax-h100
+      - inferencemax
       endpoint_type: completions
       model_name: ${server.model_name}
       dataset_path: ./datasets/neural-bridge/rag-dataset-12000/data/train-00000-of-00001-9df3a936e1f63191.parquet

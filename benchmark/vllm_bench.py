@@ -84,7 +84,7 @@ def benchmark_post_processing(cfg: DictConfig, container, concurrency, seed = No
         "platform": cfg.server.platform,
         "engine": container.name,
         "tp_size": container.tp_size,
-        "benchmark": 'inferencemax-h100',
+        "benchmark": 'inferencemax',
         "remark": cfg.server.remark if 'remark' in cfg.server else '',
         "seed": seed if seed is not None else "random",
 
