@@ -14,7 +14,7 @@ operation_count = 0
 def operation_check():
     global operation_count
     operation_count += 1
-    if operation_count > 30:
+    if operation_count > 45:
         operation_count = 0
         print("wait for the google auth limitation...")
         time.sleep(101)
@@ -121,7 +121,7 @@ def export(test_name: str, sheet_name: str, worksheet_name = None):
         SHEET_ID = sheet_value.split('/d/', 1)[1].split('/', 1)[0]
     else:
         SHEET_ID = sheet_value
-    logging.info('SHEET_ID', SHEET_ID)
+    logging.info('SHEET_ID: %s', SHEET_ID)
     logging.info(f'path: https://docs.google.com/spreadsheets/d/{SHEET_ID}')
 
     sheet = gc.open_by_key(SHEET_ID)
