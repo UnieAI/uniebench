@@ -50,8 +50,42 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency, seed, request_rate):
             '--result-filename', 'full_result.json',
             '--seed', f'{seed}',
         ]
+    elif cfg.benchmark.endpoint_type == 'text':
+        backend = 'openai'
+        endpoint = '/v1/completions'
+
+        cmd = [
+            'vllm', 'bench', 'serve',
+            '--base-url', f'{cfg.server.base_url}:{cfg.server.port}',
+            '--endpoint', endpoint,
+            '--backend', backend,
+            '--served-model-name', cfg.server.model_id,
+            '--num-prompts', f'{concurrency * 4}',
+            '--max-concurrency', f'{concurrency}',
+            '--request-rate', 'inf',
+            '--ignore-eos',
+            '--save-result',
+            '--percentile-metrics', 'ttft,tpot,itl,e2el',
+            '--result-dir', RESULT_ROOT,
+            '--result-filename', 'full_result.json',
+            '--seed', f'{seed}',
+        ]
+
+        if 'dataset_path' in cfg.benchmark and cfg.benchmark.dataset_path != 'none':
+            cmd.extend([
+                '--dataset-name', 'sharegpt',
+                '--dataset-path', cfg.benchmark.dataset_path,
+                '--sharegpt-output-len', str(token_lengths.output_len),
+            ])
+        else:
+            cmd.extend([
+                '--dataset-name', 'random',
+                '--random-input-len', str(token_lengths.input_len),
+                '--random-output-len', str(token_lengths.output_len),
+                '--random-range-ratio', '1',
+            ])
     else:
-        raise "endpoint_type not supported"
+        raise ValueError(f"endpoint_type '{cfg.benchmark.endpoint_type}' not supported")
 
     logging.debug("run vllm_bench command")
     logging.log(TRACE_LEVEL, "command: %s", cmd)
@@ -90,7 +124,12 @@ def benchmark_post_processing(cfg: DictConfig, container, concurrency, seed = No
 
         "request_count": data['completed'],
         "interval": data['duration'] * 1000, # second to ms
-        "request_rate": data['request_rate'],
+    }
+    if cfg.benchmark.endpoint_type == 'text':
+        result["concurrency"] = data['max_concurrency']
+    else:
+        result["request_rate"] = data['request_rate']
+    result.update({
         "model_name": data['tokenizer_id'],
         "input_tokens": data['total_input_tokens'] / data['completed'],
         "output_tokens": data['total_output_tokens'] / data['completed'],
@@ -112,7 +151,7 @@ def benchmark_post_processing(cfg: DictConfig, container, concurrency, seed = No
         "inter_token_latency.median": data['median_itl_ms'],
         "inter_token_latency.std": data['std_itl_ms'],
         "inter_token_latency.p99": data['p99_itl_ms'],
-    }
+    })
     result.update(collect_runtime_metadata(cfg))
     
     dist = os.path.join(dist_folder, 'result.json')
