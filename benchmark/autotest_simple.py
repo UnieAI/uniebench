@@ -7,7 +7,7 @@
 #   --result-dir ./results \
 #   --concurrency 1,2 \
 #   --with-container \
-#   --port 8080 \
+#   --base-url http://127.0.0.1:8080 \
 #   --tokenizer /workspace/model \
 #   --debug-break # stop test for debugging errors
 from __future__ import annotations
@@ -25,11 +25,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 DEFAULT_SERVICE_DIR = Path("/workspace/nctu6/ascend/service")
 DEFAULT_HEALTH_TIMEOUT_SEC = 36 * 60
 DEFAULT_PORT_FREE_WAIT_SEC = 90
+DEFAULT_TEXT_OUTPUT_LEN = 1024
+DEFAULT_VLM_OUTPUT_LEN = 32
+DEFAULT_VLM_DATASET_PATH = "lmms-lab/VQAv2"
+DEFAULT_VLM_HF_SPLIT = "validation"
+DEFAULT_EMBEDDING_DATASET_PATH = "BeIR/scifact"
+DEFAULT_EMBEDDING_HF_SUBSET = "corpus"
+DEFAULT_EMBEDDING_HF_SPLIT = "corpus"
 LOG = logging.getLogger("autotest_simple")
 
 
@@ -37,8 +45,22 @@ LOG = logging.getLogger("autotest_simple")
 class ComposeInfo:
     compose_file: Path
     service_name: str
-    host_port: int
+    host_port: int | None
     tokenizer: str
+    base_url: str | None = None
+
+
+@dataclass
+class BenchmarkConfig:
+    task: str
+    benchmark_script: Path
+    dataset_name: str
+    dataset_path: str
+    backend: str | None
+    endpoint: str | None
+    hf_subset: str | None
+    hf_split: str | None
+    output_len: int | None
 
 
 def run_cmd(
@@ -59,6 +81,35 @@ def run_cmd(
 def compose_project_name(info: ComposeInfo) -> str:
     slug = re.sub(r"[^a-z0-9_-]", "_", info.compose_file.stem.lower())
     return f"autotest_{slug}"
+
+
+def normalize_base_url(raw_url: str) -> str:
+    url = raw_url.strip().rstrip("/")
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError(f"Invalid URL: {raw_url}")
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+
+
+def benchmark_base_url(info: ComposeInfo) -> str:
+    if info.base_url:
+        return info.base_url
+    if info.host_port is None:
+        raise RuntimeError(f"No host port/base URL available for {info.service_name}")
+    return f"http://0.0.0.0:{info.host_port}"
+
+
+def healthcheck_url(info: ComposeInfo) -> str:
+    if info.base_url:
+        parsed = urlsplit(info.base_url)
+        path = parsed.path.rstrip("/")
+        if path.endswith("/v1"):
+            path = path[:-3]
+        health_path = f"{path}/health" if path else "/health"
+        return urlunsplit((parsed.scheme, parsed.netloc, health_path, "", ""))
+    if info.host_port is None:
+        raise RuntimeError(f"No host port/base URL available for {info.service_name}")
+    return f"http://127.0.0.1:{info.host_port}/health"
 
 
 def diagnose_port_usage(port: int) -> str:
@@ -162,11 +213,86 @@ def parse_concurrency(raw: str) -> list[int]:
     return values
 
 
-def infer_dataset_name(dataset_path: str) -> str:
+def infer_text_dataset_name(dataset_path: str) -> str:
     lower = dataset_path.lower()
     if lower.endswith(".json") or lower.endswith(".jsonl"):
         return "sharegpt"
     return "hf"
+
+
+def infer_benchmark_task(task: str, dataset_path: str | None) -> str:
+    if task != "auto":
+        return task
+    lower = (dataset_path or "").strip().lower()
+    if lower == DEFAULT_VLM_DATASET_PATH.lower():
+        return "vlm"
+    if lower == DEFAULT_EMBEDDING_DATASET_PATH.lower():
+        return "embedding"
+    return "text"
+
+
+def resolve_dataset_path(task: str, dataset_path: str | None, root: Path) -> str:
+    if dataset_path and dataset_path.strip():
+        return dataset_path.strip()
+    if task == "vlm":
+        return DEFAULT_VLM_DATASET_PATH
+    if task == "embedding":
+        return DEFAULT_EMBEDDING_DATASET_PATH
+    return str(root / "data/ShareGPT_V3_unfiltered_cleaned_split.json")
+
+
+def resolve_benchmark_script(task: str, benchmark_script: Path | None, root: Path) -> Path:
+    if benchmark_script is not None:
+        return benchmark_script
+    return root / "benchmark/inferencemax-h100/bench_serving/benchmark_serving.py"
+
+
+def resolve_benchmark_config(
+    args: argparse.Namespace,
+    root: Path,
+) -> BenchmarkConfig:
+    task = infer_benchmark_task(args.benchmark_task, args.dataset_path)
+    dataset_path = resolve_dataset_path(task, args.dataset_path, root)
+    benchmark_script = resolve_benchmark_script(task, args.benchmark_script, root)
+
+    if task == "embedding":
+        return BenchmarkConfig(
+            task=task,
+            benchmark_script=benchmark_script,
+            dataset_name="hf",
+            dataset_path=dataset_path,
+            backend="openai-embeddings",
+            endpoint=args.endpoint or "/v1/embeddings",
+            hf_subset=args.hf_subset or DEFAULT_EMBEDDING_HF_SUBSET,
+            hf_split=args.hf_split or DEFAULT_EMBEDDING_HF_SPLIT,
+            output_len=None,
+        )
+
+    if task == "vlm":
+        return BenchmarkConfig(
+            task=task,
+            benchmark_script=benchmark_script,
+            dataset_name="hf",
+            dataset_path=dataset_path,
+            backend=args.backend or "openai-chat",
+            endpoint=args.endpoint or "/v1/chat/completions",
+            hf_subset=args.hf_subset,
+            hf_split=args.hf_split or DEFAULT_VLM_HF_SPLIT,
+            output_len=args.output_len or DEFAULT_VLM_OUTPUT_LEN,
+        )
+
+    dataset_name = infer_text_dataset_name(dataset_path)
+    return BenchmarkConfig(
+        task=task,
+        benchmark_script=benchmark_script,
+        dataset_name=dataset_name,
+        dataset_path=dataset_path,
+        backend=args.backend or "openai",
+        endpoint=args.endpoint or "/v1/completions",
+        hf_subset=args.hf_subset,
+        hf_split=args.hf_split or ("train" if dataset_name == "hf" else None),
+        output_len=args.output_len or DEFAULT_TEXT_OUTPUT_LEN,
+    )
 
 
 def find_model_path(command: str | list[str] | None) -> str | None:
@@ -293,8 +419,7 @@ def load_compose_info(compose_file: Path, root: Path) -> ComposeInfo:
         return parse_compose_fallback(compose_file)
 
 
-def wait_for_health(port: int, timeout_sec: int, interval_sec: int) -> None:
-    url = f"http://127.0.0.1:{port}/health"
+def wait_for_health(url: str, timeout_sec: int, interval_sec: int) -> None:
     deadline = time.time() + timeout_sec
     while time.time() < deadline:
         try:
@@ -312,8 +437,7 @@ def wait_for_health(port: int, timeout_sec: int, interval_sec: int) -> None:
 
 def run_benchmark_for_concurrency(
     root: Path,
-    benchmark_script: Path,
-    dataset_path: str,
+    benchmark_config: BenchmarkConfig,
     result_dir: Path,
     model_name: str,
     info: ComposeInfo,
@@ -322,26 +446,23 @@ def run_benchmark_for_concurrency(
     seed: int,
     python_bin: str,
 ) -> None:
-    dataset_name = infer_dataset_name(dataset_path)
-    if dataset_name == "sharegpt":
-        dataset_path_str = str(Path(dataset_path).expanduser().resolve())
-    else:
-        dataset_path_str = dataset_path
-
     result_filename = f"{info.service_name}.{concurrency}.json"
+    if benchmark_config.dataset_name == "sharegpt":
+        dataset_path_str = str(
+            Path(benchmark_config.dataset_path).expanduser().resolve()
+        )
+    else:
+        dataset_path_str = benchmark_config.dataset_path
+
     cmd = [
         python_bin,
-        str(benchmark_script),
+        str(benchmark_config.benchmark_script),
         "--model",
         model_name,
-        "--backend",
-        "openai",
         "--base-url",
-        f"http://0.0.0.0:{info.host_port}",
+        benchmark_base_url(info),
         "--tokenizer",
         info.tokenizer,
-        "--dataset-name",
-        dataset_name,
         "--dataset-path",
         dataset_path_str,
         "--num-prompts",
@@ -352,19 +473,33 @@ def run_benchmark_for_concurrency(
         str(concurrency),
         "--request-rate",
         "inf",
-        "--ignore-eos",
         "--save-result",
-        "--percentile-metrics",
-        "ttft,tpot,itl,e2el",
         "--result-dir",
         str(result_dir),
         "--result-filename",
         result_filename,
+        "--backend",
+        benchmark_config.backend or "openai",
+        "--endpoint",
+        benchmark_config.endpoint or "/v1/completions",
+        "--dataset-name",
+        benchmark_config.dataset_name,
+        "--percentile-metrics",
+        "ttft,tpot,itl,e2el",
     ]
-    if dataset_name == "hf":
-        cmd.extend(["--hf-split", "train", "--hf-output-len", "1024"])
-    else:
-        cmd.extend(["--sharegpt-output-len", "1024"])
+    if benchmark_config.task != "embedding":
+        cmd.append("--ignore-eos")
+    if benchmark_config.dataset_name == "hf":
+        if benchmark_config.hf_subset:
+            cmd.extend(["--hf-subset", benchmark_config.hf_subset])
+        if benchmark_config.hf_split:
+            cmd.extend(["--hf-split", benchmark_config.hf_split])
+        if benchmark_config.output_len is not None:
+            cmd.extend(["--hf-output-len", str(benchmark_config.output_len)])
+    elif benchmark_config.output_len is not None:
+        cmd.extend(
+            ["--sharegpt-output-len", str(benchmark_config.output_len)]
+        )
 
     LOG.info("[run] %s", " ".join(cmd))
     run_cmd(cmd, cwd=root, check=True, capture_output=False)
@@ -486,11 +621,73 @@ def configure_argparse() -> argparse.ArgumentParser:
     parser.add_argument(
         "--benchmark-script",
         type=Path,
-        default=root / "benchmark/inferencemax-h100/bench_serving/benchmark_serving.py",
+        default=None,
+        help=(
+            "Optional benchmark script override. Defaults to the unified "
+            "benchmark/inferencemax-h100/bench_serving/benchmark_serving.py "
+            "for text, VLM, and embedding tasks."
+        ),
+    )
+    parser.add_argument(
+        "--benchmark-task",
+        default="auto",
+        choices=["auto", "text", "vlm", "embedding"],
+        help=(
+            "Benchmark mode. 'auto' infers from --dataset-path; "
+            f"{DEFAULT_VLM_DATASET_PATH} maps to 'vlm' and "
+            f"{DEFAULT_EMBEDDING_DATASET_PATH} maps to 'embedding'."
+        ),
+    )
+    parser.add_argument(
+        "--backend",
+        default=None,
+        help=(
+            "Override backend for text/VLM runs. Defaults: openai for text, "
+            "openai-chat for VLM, and openai-embeddings for embeddings."
+        ),
+    )
+    parser.add_argument(
+        "--endpoint",
+        default=None,
+        help=(
+            "Override API endpoint. Defaults: /v1/completions for text, "
+            "/v1/chat/completions for VLM, /v1/embeddings for embedding."
+        ),
     )
     parser.add_argument(
         "--dataset-path",
-        default=str(root / "data/ShareGPT_V3_unfiltered_cleaned_split.json"),
+        default=None,
+        help=(
+            "Local dataset path or Hugging Face dataset ID. Defaults to "
+            f"{root / 'data/ShareGPT_V3_unfiltered_cleaned_split.json'} for "
+            f"text, {DEFAULT_VLM_DATASET_PATH} for VLM, and "
+            f"{DEFAULT_EMBEDDING_DATASET_PATH} for embeddings."
+        ),
+    )
+    parser.add_argument(
+        "--hf-subset",
+        default=None,
+        help="Optional Hugging Face dataset subset name.",
+    )
+    parser.add_argument(
+        "--hf-split",
+        default=None,
+        help=(
+            "Optional Hugging Face split override. Defaults: train for text HF, "
+            f"{DEFAULT_VLM_HF_SPLIT} for VLM, {DEFAULT_EMBEDDING_HF_SPLIT} "
+            "for embeddings. Some embedding datasets also require "
+            "--hf-subset, e.g. BeIR/scifact -> corpus."
+        ),
+    )
+    parser.add_argument(
+        "--output-len",
+        type=int,
+        default=None,
+        help=(
+            "Fixed output length override for text/VLM benchmark requests. "
+            f"Defaults to {DEFAULT_TEXT_OUTPUT_LEN} for text and "
+            f"{DEFAULT_VLM_OUTPUT_LEN} for VLM."
+        ),
     )
     parser.add_argument(
         "--result-dir",
@@ -511,6 +708,15 @@ def configure_argparse() -> argparse.ArgumentParser:
         help=(
             "Host port of an already-running endpoint. If set with --with-container, "
             "service-dir/compose files are not required."
+        ),
+    )
+    parser.add_argument(
+        "--base-url",
+        default=None,
+        help=(
+            "Base URL of an already-running endpoint in --with-container direct "
+            "mode, for example http://127.0.0.1:8080 or "
+            "http://172.20.150.11:60201."
         ),
     )
     parser.add_argument(
@@ -575,20 +781,21 @@ def main() -> int:
 
     root = Path(__file__).resolve().parents[1]
     service_dir = args.service_dir
-    benchmark_script = args.benchmark_script
-    dataset_path = args.dataset_path.strip()
+    benchmark_config = resolve_benchmark_config(args, root)
     result_dir = args.result_dir
     concurrency_values = parse_concurrency(args.concurrency)
 
-    if not benchmark_script.exists():
-        raise RuntimeError(f"benchmark-script not found: {benchmark_script}")
-    if not dataset_path:
+    if not benchmark_config.benchmark_script.exists():
+        raise RuntimeError(
+            f"benchmark-script not found: {benchmark_config.benchmark_script}"
+        )
+    if not benchmark_config.dataset_path:
         raise RuntimeError("dataset-path is empty")
-    if infer_dataset_name(dataset_path) == "sharegpt":
-        dataset_path_obj = Path(dataset_path).expanduser()
+    if benchmark_config.dataset_name == "sharegpt":
+        dataset_path_obj = Path(benchmark_config.dataset_path).expanduser()
         if not dataset_path_obj.exists():
             raise RuntimeError(f"dataset-path not found: {dataset_path_obj}")
-        dataset_path = str(dataset_path_obj.resolve())
+        benchmark_config.dataset_path = str(dataset_path_obj.resolve())
     result_dir.mkdir(parents=True, exist_ok=True)
 
     failures: list[str] = []
@@ -598,32 +805,50 @@ def main() -> int:
     stop_requested = False
     LOG.info("[info] root: %s", root)
     LOG.info("[info] service-dir: %s", service_dir)
-    LOG.info("[info] benchmark-script: %s", benchmark_script)
-    LOG.info("[info] dataset-path: %s", dataset_path)
+    LOG.info("[info] benchmark-task: %s", benchmark_config.task)
+    LOG.info("[info] benchmark-script: %s", benchmark_config.benchmark_script)
+    LOG.info("[info] dataset-name: %s", benchmark_config.dataset_name)
+    LOG.info("[info] dataset-path: %s", benchmark_config.dataset_path)
+    LOG.info("[info] backend: %s", benchmark_config.backend)
+    LOG.info("[info] endpoint: %s", benchmark_config.endpoint)
+    LOG.info("[info] hf-subset: %s", benchmark_config.hf_subset)
+    LOG.info("[info] hf-split: %s", benchmark_config.hf_split)
+    LOG.info("[info] output-len: %s", benchmark_config.output_len)
     LOG.info("[info] result-dir: %s", result_dir)
     LOG.info("[info] concurrency: %s", concurrency_values)
     LOG.info("[info] seed: %s", args.seed)
     LOG.info("[info] with-container: %s", args.with_container)
+    LOG.info("[info] base-url: %s", args.base_url)
     LOG.info("[info] port: %s", args.port)
     LOG.info("[info] tokenizer: %s", args.tokenizer or args.model_name)
     LOG.info("[info] debug-break: %s", args.debug_break)
 
     compose_infos: list[ComposeInfo] = []
     if args.with_container:
-        if args.port is None:
-            raise RuntimeError("--port is required when --with-container is set")
+        normalized_base_url = None
+        parsed_port = args.port
+        if args.base_url:
+            normalized_base_url = normalize_base_url(args.base_url)
+            parsed = urlsplit(normalized_base_url)
+            parsed_port = parsed.port
+        if parsed_port is None and normalized_base_url is None:
+            raise RuntimeError(
+                "Either --port or --base-url is required when --with-container is set"
+            )
         compose_infos.append(
             ComposeInfo(
                 compose_file=Path("with-container"),
                 service_name=args.service_name,
-                host_port=args.port,
+                host_port=parsed_port,
                 tokenizer=args.tokenizer or args.model_name,
+                base_url=normalized_base_url,
             )
         )
         LOG.info(
-            "[info] direct with-container mode: service=%s port=%s tokenizer=%s",
+            "[info] direct with-container mode: service=%s base-url=%s port=%s tokenizer=%s",
             args.service_name,
-            args.port,
+            normalized_base_url,
+            parsed_port,
             args.tokenizer or args.model_name,
         )
     else:
@@ -654,7 +879,7 @@ def main() -> int:
 
     if not compose_infos:
         raise RuntimeError(
-            "No service targets found. Set --port with --with-container, "
+            "No service targets found. Set --port/--base-url with --with-container, "
             "or provide compose files via --service-dir."
         )
 
@@ -699,14 +924,13 @@ def main() -> int:
                         )
                         docker_log_proc = compose_up(root=root, info=info)
                     wait_for_health(
-                        port=info.host_port,
+                        url=healthcheck_url(info),
                         timeout_sec=args.health_timeout,
                         interval_sec=args.health_interval,
                     )
                     run_benchmark_for_concurrency(
                         root=root,
-                        benchmark_script=benchmark_script,
-                        dataset_path=dataset_path,
+                        benchmark_config=benchmark_config,
                         result_dir=result_dir,
                         model_name=args.model_name,
                         info=info,

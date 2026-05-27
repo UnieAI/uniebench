@@ -42,6 +42,7 @@ import pandas as pd
 from backend_request_func import (ASYNC_REQUEST_FUNCS, RequestFuncInput,
                                   RequestFuncOutput)
 from datasets import load_dataset
+from PIL import Image as PILImage
 from PIL.Image import Image
 from tqdm.asyncio import tqdm
 from transformers import PreTrainedTokenizerBase
@@ -411,7 +412,15 @@ def _extract_hf_prompt_completion(
                 return prompt, completion
 
     prompt_keys = ("prompt", "question", "instruction", "input", "query", "user")
-    completion_keys = ("answer", "response", "output", "completion", "target", "assistant")
+    completion_keys = (
+        "answer",
+        "multiple_choice_answer",
+        "response",
+        "output",
+        "completion",
+        "target",
+        "assistant",
+    )
 
     prompt = None
     for key in prompt_keys:
@@ -429,10 +438,52 @@ def _extract_hf_prompt_completion(
         if completion:
             break
 
+    if completion is None and isinstance(data.get("answers"), list):
+        answer_values = []
+        for item in data["answers"]:
+            if isinstance(item, dict):
+                answer_text = _as_text(item.get("answer"))
+                if answer_text:
+                    answer_values.append(answer_text)
+            else:
+                answer_text = _as_text(item)
+                if answer_text:
+                    answer_values.append(answer_text)
+        if answer_values:
+            completion = answer_values[0]
+
     if completion is None and fixed_output_len is not None:
         completion = ""
 
     return prompt, completion
+
+
+def _extract_hf_embedding_text(data: Dict[str, Any]) -> Optional[str]:
+    title = _as_text(data.get("title"))
+    text = _as_text(data.get("text"))
+    if title and text:
+        return f"{title}\n\n{text}"
+    if text:
+        return text
+    if title:
+        return title
+
+    for key in (
+        "query",
+        "question",
+        "prompt",
+        "input",
+        "sentence",
+        "document",
+        "content",
+        "passage",
+        "instruction",
+        "user",
+    ):
+        value = _as_text(data.get(key))
+        if value:
+            return value
+    return None
 
 
 def sample_hf_requests(
@@ -536,6 +587,176 @@ def sample_hf_requests(
         )
 
     return sampled_requests
+
+
+def sample_hf_embedding_requests(
+    dataset_path: str,
+    dataset_subset: Optional[str],
+    dataset_split: str,
+    num_requests: int,
+    tokenizer: PreTrainedTokenizerBase,
+    random_seed: int,
+) -> List[Tuple[str, int, int, None]]:
+    dataset = load_dataset(dataset_path,
+                           name=dataset_subset,
+                           split=dataset_split,
+                           streaming=True)
+    shuffled_dataset = dataset.shuffle(seed=random_seed)
+
+    sampled_requests: List[Tuple[str, int, int, None]] = []
+    for data in shuffled_dataset:
+        if len(sampled_requests) == num_requests:
+            break
+
+        prompt = _extract_hf_embedding_text(data)
+        if not prompt:
+            continue
+
+        prompt_len = len(tokenizer(prompt).input_ids)
+        if prompt_len <= 0:
+            continue
+
+        sampled_requests.append((prompt, prompt_len, 1, None))
+
+    if not sampled_requests:
+        raise ValueError(
+            "Unable to sample HF embedding requests from dataset. "
+            "Expected text-like fields such as title/text, query, question, "
+            "prompt, or content."
+        )
+
+    return sampled_requests
+
+
+def _image_dimensions_from_mm_content(
+    mm_content: Optional[Dict[str, Collection[str]]],
+) -> Optional[Tuple[int, int]]:
+    if not mm_content:
+        return None
+    if mm_content.get("type") != "image_url":
+        return None
+    image_url_data = mm_content.get("image_url")
+    if not isinstance(image_url_data, dict):
+        return None
+    image_url = image_url_data.get("url")
+    if not isinstance(image_url, str) or not image_url:
+        return None
+
+    if image_url.startswith("data:image/") and ";base64," in image_url:
+        try:
+            encoded = image_url.split(";base64,", 1)[1]
+            image_bytes = base64.b64decode(encoded)
+            with PILImage.open(io.BytesIO(image_bytes)) as image:
+                return image.width, image.height
+        except (ValueError, IndexError):
+            return None
+
+    if image_url.startswith("file://"):
+        local_path = image_url.removeprefix("file://")
+        try:
+            with PILImage.open(local_path) as image:
+                return image.width, image.height
+        except OSError:
+            return None
+
+    return None
+
+
+def _image_size_from_mm_content(
+    mm_content: Optional[Dict[str, Collection[str]]],
+) -> Optional[int]:
+    if not mm_content:
+        return None
+    if mm_content.get("type") != "image_url":
+        return None
+    image_url_data = mm_content.get("image_url")
+    if not isinstance(image_url_data, dict):
+        return None
+    image_url = image_url_data.get("url")
+    if not isinstance(image_url, str) or not image_url:
+        return None
+
+    if image_url.startswith("data:image/") and ";base64," in image_url:
+        try:
+            encoded = image_url.split(";base64,", 1)[1]
+            return len(base64.b64decode(encoded))
+        except (ValueError, IndexError):
+            return None
+
+    if image_url.startswith("file://"):
+        local_path = image_url.removeprefix("file://")
+        try:
+            return os.path.getsize(local_path)
+        except OSError:
+            return None
+
+    return None
+
+
+def summarize_image_payloads(
+    input_requests: List[Tuple[str, int, int, Optional[Dict[str, Collection[str]]]]],
+    benchmark_duration: float,
+) -> Dict[str, float | int]:
+    total_image_count = 0
+    requests_with_images = 0
+    image_widths: List[int] = []
+    image_heights: List[int] = []
+    image_sizes: List[int] = []
+
+    for _, _, _, mm_content in input_requests:
+        if not mm_content:
+            continue
+        total_image_count += 1
+        requests_with_images += 1
+        image_dimensions = _image_dimensions_from_mm_content(mm_content)
+        if image_dimensions is not None:
+            image_widths.append(image_dimensions[0])
+            image_heights.append(image_dimensions[1])
+        image_size = _image_size_from_mm_content(mm_content)
+        if image_size is not None:
+            image_sizes.append(image_size)
+
+    if image_widths:
+        width_values = np.array(image_widths, dtype=np.float64)
+        image_width_avg = float(np.mean(width_values))
+        image_width_std = float(np.std(width_values))
+    else:
+        image_width_avg = 0.0
+        image_width_std = 0.0
+
+    if image_heights:
+        height_values = np.array(image_heights, dtype=np.float64)
+        image_hight_avg = float(np.mean(height_values))
+        image_hight_std = float(np.std(height_values))
+    else:
+        image_hight_avg = 0.0
+        image_hight_std = 0.0
+
+    if image_sizes:
+        size_values = np.array(image_sizes, dtype=np.float64)
+        image_size_avg = float(np.mean(size_values))
+        image_size_std = float(np.std(size_values))
+        total_image_bytes = int(np.sum(size_values))
+    else:
+        image_size_avg = 0.0
+        image_size_std = 0.0
+        total_image_bytes = 0
+
+    input_image_throughput = (
+        total_image_bytes / benchmark_duration if benchmark_duration > 0 else 0.0
+    )
+
+    return {
+        "requests_with_images": requests_with_images,
+        "total_image_count": total_image_count,
+        "image_width_avg": image_width_avg,
+        "image_width_std": image_width_std,
+        "image_hight_avg": image_hight_avg,
+        "image_hight_std": image_hight_std,
+        "image_size_avg": image_size_avg,
+        "image_size_std": image_size_std,
+        "input_image_throughput": input_image_throughput,
+    }
 
 
 def sample_random_requests(
@@ -772,6 +993,8 @@ async def benchmark(
         request_func = ASYNC_REQUEST_FUNCS[backend]
     else:
         raise ValueError(f"Unknown backend: {backend}")
+    if backend == "openai-embeddings" and profile:
+        raise ValueError("Profiling is not supported for embedding benchmark.")
 
     print("Starting initial single prompt test run...")
     test_prompt, test_prompt_len, test_output_len, test_mm_content = (
@@ -901,6 +1124,7 @@ async def benchmark(
         selected_percentiles=selected_percentiles,
         goodput_config_dict=goodput_config_dict,
     )
+    image_stats = summarize_image_payloads(input_requests, benchmark_duration)
 
     print("{s:{c}^{n}}".format(s=' Serving Benchmark Result ', n=50, c='='))
     print("{:<40} {:<10}".format("Successful requests:", metrics.completed))
@@ -918,6 +1142,24 @@ async def benchmark(
                                     metrics.output_throughput))
     print("{:<40} {:<10.2f}".format("Total Token throughput (tok/s):",
                                     metrics.total_token_throughput))
+    print("{:<40} {:<10}".format("Requests with images:",
+                                 image_stats["requests_with_images"]))
+    print("{:<40} {:<10}".format("Total image count:",
+                                 image_stats["total_image_count"]))
+    print("{:<40} {:<10.2f}".format("Image width avg:",
+                                    image_stats["image_width_avg"]))
+    print("{:<40} {:<10.2f}".format("Image width std:",
+                                    image_stats["image_width_std"]))
+    print("{:<40} {:<10.2f}".format("Image hight avg:",
+                                    image_stats["image_hight_avg"]))
+    print("{:<40} {:<10.2f}".format("Image hight std:",
+                                    image_stats["image_hight_std"]))
+    print("{:<40} {:<10.2f}".format("Image size avg:",
+                                    image_stats["image_size_avg"]))
+    print("{:<40} {:<10.2f}".format("Image size std:",
+                                    image_stats["image_size_std"]))
+    print("{:<40} {:<10.2f}".format("Input Image throughput (bytes/s):",
+                                    image_stats["input_image_throughput"]))
 
     result = {
         "duration": benchmark_duration,
@@ -935,6 +1177,7 @@ async def benchmark(
         "itls": [output.itl for output in outputs],
         "generated_texts": [output.generated_text for output in outputs],
         "errors": [output.error for output in outputs],
+        **image_stats,
     }
 
     def process_one_metric(
@@ -1063,7 +1306,21 @@ def main(args: argparse.Namespace):
                               tokenizer_mode=tokenizer_mode,
                               trust_remote_code=args.trust_remote_code)
 
-    if args.dataset is not None:
+    if backend == "openai-embeddings":
+        if args.dataset_name != "hf":
+            raise ValueError(
+                "Embedding benchmark currently supports only --dataset-name hf."
+            )
+        input_requests = sample_hf_embedding_requests(
+            dataset_path=args.dataset_path,
+            dataset_subset=args.hf_subset or "corpus",
+            dataset_split=args.hf_split or "corpus",
+            num_requests=args.num_prompts,
+            tokenizer=tokenizer,
+            random_seed=args.seed,
+        )
+
+    elif args.dataset is not None:
         warnings.warn(
             "The '--dataset' argument will be deprecated in the next "
             "release. Please use '--dataset-name' and "
@@ -1247,7 +1504,7 @@ if __name__ == "__main__":
         "--endpoint",
         type=str,
         default="/v1/completions",
-        help="API endpoint.",
+        help="API endpoint. Use /v1/embeddings with --backend openai-embeddings.",
     )
     parser.add_argument(
         "--dataset",
@@ -1267,7 +1524,8 @@ if __name__ == "__main__":
                         type=str,
                         default=None,
                         help="Path to the sharegpt/sonnet dataset. "
-                        "Or the huggingface dataset ID if using HF dataset.")
+                        "Or the huggingface dataset ID if using HF dataset. "
+                        "Embedding benchmark expects an HF dataset.")
     parser.add_argument(
         "--max-concurrency",
         type=int,

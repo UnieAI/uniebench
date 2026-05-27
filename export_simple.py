@@ -8,6 +8,18 @@ import gspread
 import logging
 from google.oauth2.service_account import Credentials
 
+IMAGE_STAT_COLUMNS = [
+    "requests_with_images",
+    "total_image_count",
+    "image_width_avg",
+    "image_width_std",
+    "image_hight_avg",
+    "image_hight_std",
+    "image_size_avg",
+    "image_size_std",
+    "input_image_throughput",
+]
+
 operation_count = 0
 def operation_check():
     global operation_count
@@ -47,6 +59,9 @@ def _collect_rows(test_name: str):
 
             if header is None:
                 data_keys = list(data.keys())
+                for column in IMAGE_STAT_COLUMNS:
+                    if column not in data_keys:
+                        data_keys.append(column)
                 if 'engine' in data_keys:
                     data_keys = ['engine'] + [k for k in data_keys if k != 'engine']
                     header = data_keys[:1] + ['date_time'] + data_keys[1:]
@@ -109,6 +124,16 @@ def benchmark_post_processing(path):
             "inter_token_latency.median": data['median_itl_ms'],
             "inter_token_latency.std": data['std_itl_ms'],
             "inter_token_latency.p99": data['p99_itl_ms'],
+
+            "requests_with_images": data.get('requests_with_images', ''),
+            "total_image_count": data.get('total_image_count', ''),
+            "image_width_avg": data.get('image_width_avg', ''),
+            "image_width_std": data.get('image_width_std', ''),
+            "image_hight_avg": data.get('image_hight_avg', ''),
+            "image_hight_std": data.get('image_hight_std', ''),
+            "image_size_avg": data.get('image_size_avg', ''),
+            "image_size_std": data.get('image_size_std', ''),
+            "input_image_throughput": data.get('input_image_throughput', ''),
         }
         all_result.append(result)
     
