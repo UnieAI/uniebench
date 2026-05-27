@@ -31,6 +31,7 @@ from urllib.request import Request, urlopen
 DEFAULT_SERVICE_DIR = Path("/workspace/nctu6/ascend/service")
 DEFAULT_HEALTH_TIMEOUT_SEC = 36 * 60
 DEFAULT_PORT_FREE_WAIT_SEC = 90
+DEFAULT_MODEL_NAME = "test"
 DEFAULT_TEXT_OUTPUT_LEN = 1024
 DEFAULT_VLM_OUTPUT_LEN = 32
 DEFAULT_VLM_DATASET_PATH = "lmms-lab/VQAv2"
@@ -211,6 +212,12 @@ def parse_concurrency(raw: str) -> list[int]:
     if not values:
         raise ValueError("At least one concurrency value is required")
     return values
+
+
+def resolve_request_model_name(configured_model_name: str, info: ComposeInfo) -> str:
+    if configured_model_name != DEFAULT_MODEL_NAME:
+        return configured_model_name
+    return info.service_name
 
 
 def infer_text_dataset_name(dataset_path: str) -> str:
@@ -458,7 +465,7 @@ def run_benchmark_for_concurrency(
         python_bin,
         str(benchmark_config.benchmark_script),
         "--model",
-        model_name,
+        resolve_request_model_name(model_name, info),
         "--base-url",
         benchmark_base_url(info),
         "--tokenizer",
