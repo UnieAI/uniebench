@@ -4,6 +4,8 @@ results/
 config/service_account.json
 *env/
 benchmark/datasets/
+datasets/
+!datasets/README.md
 .runtime_pids/
 services/*
 !services/default/
