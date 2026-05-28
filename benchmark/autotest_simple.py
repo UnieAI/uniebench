@@ -36,6 +36,9 @@ DEFAULT_TEXT_OUTPUT_LEN = 1024
 DEFAULT_VLM_OUTPUT_LEN = 32
 DEFAULT_VLM_DATASET_PATH = "lmms-lab/VQAv2"
 DEFAULT_VLM_HF_SPLIT = "validation"
+DEFAULT_AUDIO_DATASET_PATH = "adi-gov-tw/Taiwan-Tongues-ASR-CE-dataset-hokkien"
+DEFAULT_AUDIO_HF_SUBSET = None
+DEFAULT_AUDIO_HF_SPLIT = "train"
 DEFAULT_EMBEDDING_DATASET_PATH = "BeIR/scifact"
 DEFAULT_EMBEDDING_HF_SUBSET = "corpus"
 DEFAULT_EMBEDDING_HF_SPLIT = "corpus"
@@ -63,6 +66,7 @@ class BenchmarkConfig:
     hf_split: str | None
     output_len: int | None
     num_images_per_request: int
+    audio_language: str | None
 
 
 def run_cmd(
@@ -234,6 +238,8 @@ def infer_benchmark_task(task: str, dataset_path: str | None) -> str:
     lower = (dataset_path or "").strip().lower()
     if lower == DEFAULT_VLM_DATASET_PATH.lower():
         return "vlm"
+    if lower == DEFAULT_AUDIO_DATASET_PATH.lower():
+        return "audio"
     if lower == DEFAULT_EMBEDDING_DATASET_PATH.lower():
         return "embedding"
     return "text"
@@ -244,6 +250,8 @@ def resolve_dataset_path(task: str, dataset_path: str | None, root: Path) -> str
         return dataset_path.strip()
     if task == "vlm":
         return DEFAULT_VLM_DATASET_PATH
+    if task == "audio":
+        return DEFAULT_AUDIO_DATASET_PATH
     if task == "embedding":
         return DEFAULT_EMBEDDING_DATASET_PATH
     return str(root / "data/ShareGPT_V3_unfiltered_cleaned_split.json")
@@ -275,6 +283,22 @@ def resolve_benchmark_config(
             hf_split=args.hf_split or DEFAULT_EMBEDDING_HF_SPLIT,
             output_len=None,
             num_images_per_request=1,
+            audio_language=None,
+        )
+
+    if task == "audio":
+        return BenchmarkConfig(
+            task=task,
+            benchmark_script=benchmark_script,
+            dataset_name="hf",
+            dataset_path=dataset_path,
+            backend=args.backend or "openai-audio",
+            endpoint=args.endpoint or "/v1/audio/transcriptions",
+            hf_subset=args.hf_subset or DEFAULT_AUDIO_HF_SUBSET,
+            hf_split=args.hf_split or DEFAULT_AUDIO_HF_SPLIT,
+            output_len=args.output_len or DEFAULT_TEXT_OUTPUT_LEN,
+            num_images_per_request=1,
+            audio_language=args.audio_language,
         )
 
     if task == "vlm":
@@ -289,6 +313,7 @@ def resolve_benchmark_config(
             hf_split=args.hf_split or DEFAULT_VLM_HF_SPLIT,
             output_len=args.output_len or DEFAULT_VLM_OUTPUT_LEN,
             num_images_per_request=args.num_images_per_request,
+            audio_language=None,
         )
 
     dataset_name = infer_text_dataset_name(dataset_path)
@@ -303,6 +328,7 @@ def resolve_benchmark_config(
         hf_split=args.hf_split or ("train" if dataset_name == "hf" else None),
         output_len=args.output_len or DEFAULT_TEXT_OUTPUT_LEN,
         num_images_per_request=1,
+        audio_language=None,
     )
 
 
@@ -498,13 +524,15 @@ def run_benchmark_for_concurrency(
         "--percentile-metrics",
         "ttft,tpot,itl,e2el",
     ]
-    if benchmark_config.task != "embedding":
+    if benchmark_config.task in {"text", "vlm"}:
         cmd.append("--ignore-eos")
     if benchmark_config.dataset_name == "hf":
         if benchmark_config.hf_subset:
             cmd.extend(["--hf-subset", benchmark_config.hf_subset])
         if benchmark_config.hf_split:
             cmd.extend(["--hf-split", benchmark_config.hf_split])
+        if benchmark_config.audio_language:
+            cmd.extend(["--audio-language", benchmark_config.audio_language])
         if benchmark_config.output_len is not None:
             cmd.extend(["--hf-output-len", str(benchmark_config.output_len)])
         if benchmark_config.task == "vlm":
@@ -649,10 +677,11 @@ def configure_argparse() -> argparse.ArgumentParser:
     parser.add_argument(
         "--benchmark-task",
         default="auto",
-        choices=["auto", "text", "vlm", "embedding"],
+        choices=["auto", "text", "vlm", "audio", "embedding"],
         help=(
             "Benchmark mode. 'auto' infers from --dataset-path; "
             f"{DEFAULT_VLM_DATASET_PATH} maps to 'vlm' and "
+            f"{DEFAULT_AUDIO_DATASET_PATH} maps to 'audio', and "
             f"{DEFAULT_EMBEDDING_DATASET_PATH} maps to 'embedding'."
         ),
     )
@@ -661,7 +690,8 @@ def configure_argparse() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Override backend for text/VLM runs. Defaults: openai for text, "
-            "openai-chat for VLM, and openai-embeddings for embeddings."
+            "openai-chat for VLM, openai-audio for audio, and "
+            "openai-embeddings for embeddings."
         ),
     )
     parser.add_argument(
@@ -669,7 +699,8 @@ def configure_argparse() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Override API endpoint. Defaults: /v1/completions for text, "
-            "/v1/chat/completions for VLM, /v1/embeddings for embedding."
+            "/v1/chat/completions for VLM, /v1/audio/transcriptions for "
+            "audio, /v1/embeddings for embedding."
         ),
     )
     parser.add_argument(
@@ -678,7 +709,8 @@ def configure_argparse() -> argparse.ArgumentParser:
         help=(
             "Local dataset path or Hugging Face dataset ID. Defaults to "
             f"{root / 'data/ShareGPT_V3_unfiltered_cleaned_split.json'} for "
-            f"text, {DEFAULT_VLM_DATASET_PATH} for VLM, and "
+            f"text, {DEFAULT_VLM_DATASET_PATH} for VLM, "
+            f"{DEFAULT_AUDIO_DATASET_PATH} for audio, and "
             f"{DEFAULT_EMBEDDING_DATASET_PATH} for embeddings."
         ),
     )
@@ -692,9 +724,18 @@ def configure_argparse() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Optional Hugging Face split override. Defaults: train for text HF, "
-            f"{DEFAULT_VLM_HF_SPLIT} for VLM, {DEFAULT_EMBEDDING_HF_SPLIT} "
+            f"{DEFAULT_VLM_HF_SPLIT} for VLM, {DEFAULT_AUDIO_HF_SPLIT} for "
+            f"audio, {DEFAULT_EMBEDDING_HF_SPLIT} "
             "for embeddings. Some embedding datasets also require "
             "--hf-subset, e.g. BeIR/scifact -> corpus."
+        ),
+    )
+    parser.add_argument(
+        "--audio-language",
+        default=None,
+        help=(
+            "Requested audio language code for audio HF datasets. This is passed through to the audio "
+            "sampler and transcription request."
         ),
     )
     parser.add_argument(
@@ -702,7 +743,7 @@ def configure_argparse() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help=(
-            "Fixed output length override for text/VLM benchmark requests. "
+            "Fixed output length override for text/VLM/audio benchmark requests. "
             f"Defaults to {DEFAULT_TEXT_OUTPUT_LEN} for text and "
             f"{DEFAULT_VLM_OUTPUT_LEN} for VLM."
         ),
@@ -840,6 +881,7 @@ def main() -> int:
     LOG.info("[info] endpoint: %s", benchmark_config.endpoint)
     LOG.info("[info] hf-subset: %s", benchmark_config.hf_subset)
     LOG.info("[info] hf-split: %s", benchmark_config.hf_split)
+    LOG.info("[info] audio-language: %s", benchmark_config.audio_language)
     LOG.info("[info] output-len: %s", benchmark_config.output_len)
     LOG.info(
         "[info] num-images-per-request: %s",

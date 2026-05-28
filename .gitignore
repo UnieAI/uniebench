@@ -5,3 +5,4 @@ config/service_account.json
 *env/
 benchmark/datasets/
 export/
+*.log

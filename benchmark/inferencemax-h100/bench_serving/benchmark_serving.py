@@ -33,6 +33,7 @@ import os
 import random
 import time
 import warnings
+import wave
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, AsyncGenerator, Collection, Dict, List, Optional, Tuple
@@ -46,6 +47,11 @@ from PIL import Image as PILImage
 from PIL.Image import Image
 from tqdm.asyncio import tqdm
 from transformers import PreTrainedTokenizerBase
+
+try:
+    import soundfile
+except ImportError:
+    soundfile = None
 
 try:
     from vllm.transformers_utils.tokenizer import get_tokenizer
@@ -748,8 +754,11 @@ def _normalize_mm_contents(
     if mm_content is None:
         return []
     if isinstance(mm_content, list):
-        return [item for item in mm_content if isinstance(item, dict)]
-    if isinstance(mm_content, dict):
+        return [
+            item for item in mm_content
+            if isinstance(item, dict) and item.get("type") == "image_url"
+        ]
+    if isinstance(mm_content, dict) and mm_content.get("type") == "image_url":
         return [mm_content]
     return []
 
@@ -819,6 +828,105 @@ def summarize_image_payloads(
         "image_size_avg": image_size_avg,
         "image_size_std": image_size_std,
         "input_image_throughput": input_image_throughput,
+    }
+
+
+def _audio_duration_seconds_from_mm_content(
+    mm_content: Optional[Dict[str, Any]],
+) -> Optional[float]:
+    if not isinstance(mm_content, dict):
+        return None
+
+    mm_audio = mm_content.get("audio")
+    if (
+        isinstance(mm_audio, (tuple, list))
+        and len(mm_audio) == 2
+        and isinstance(mm_audio[1], (int, float))
+    ):
+        waveform, sampling_rate = mm_audio
+        if float(sampling_rate) <= 0:
+            return None
+        samples = np.asarray(waveform)
+        if samples.ndim == 0:
+            return None
+        frame_count = samples.shape[0]
+        return float(frame_count) / float(sampling_rate)
+
+    audio_path = mm_content.get("path")
+    if isinstance(audio_path, str) and audio_path:
+        if soundfile is not None:
+            try:
+                info = soundfile.info(audio_path)
+                if info.samplerate > 0:
+                    return float(info.frames) / float(info.samplerate)
+            except Exception:
+                pass
+        try:
+            with wave.open(audio_path, "rb") as wav_file:
+                sample_rate = wav_file.getframerate()
+                frame_count = wav_file.getnframes()
+                if sample_rate > 0:
+                    return float(frame_count) / float(sample_rate)
+        except (wave.Error, OSError):
+            pass
+
+    audio_bytes = mm_content.get("bytes")
+    if audio_bytes:
+        if soundfile is not None:
+            try:
+                info = soundfile.info(io.BytesIO(audio_bytes))
+                if info.samplerate > 0:
+                    return float(info.frames) / float(info.samplerate)
+            except Exception:
+                pass
+        try:
+            with wave.open(io.BytesIO(audio_bytes), "rb") as wav_file:
+                sample_rate = wav_file.getframerate()
+                frame_count = wav_file.getnframes()
+                if sample_rate > 0:
+                    return float(frame_count) / float(sample_rate)
+        except wave.Error:
+            pass
+
+    return None
+
+
+def summarize_audio_payloads(
+    input_requests: List[Tuple[str, int, int, Optional[Dict[str, Any]]]],
+    benchmark_duration: float,
+) -> Dict[str, float | int]:
+    requests_with_audios = 0
+    total_audio_count = 0
+    audio_lengths: List[float] = []
+
+    for _, _, _, mm_content in input_requests:
+        audio_length = _audio_duration_seconds_from_mm_content(mm_content)
+        if audio_length is None:
+            continue
+        requests_with_audios += 1
+        total_audio_count += 1
+        audio_lengths.append(audio_length)
+
+    if audio_lengths:
+        length_values = np.array(audio_lengths, dtype=np.float64)
+        audio_length_avg = float(np.mean(length_values))
+        audio_length_std = float(np.std(length_values))
+        total_audio_seconds = float(np.sum(length_values))
+    else:
+        audio_length_avg = 0.0
+        audio_length_std = 0.0
+        total_audio_seconds = 0.0
+
+    input_audio_throughput = (
+        total_audio_seconds / benchmark_duration if benchmark_duration > 0 else 0.0
+    )
+
+    return {
+        "requests_with_audios": requests_with_audios,
+        "total_audio_count": total_audio_count,
+        "audio_length_avg": audio_length_avg,
+        "audio_length_std": audio_length_std,
+        "input_audio_throughput": input_audio_throughput,
     }
 
 
@@ -1037,7 +1145,7 @@ async def benchmark(
     base_url: str,
     model_id: str,
     model_name: str,
-    tokenizer: PreTrainedTokenizerBase,
+    tokenizer: Optional[PreTrainedTokenizerBase],
     input_requests: List[Tuple[str, int, int]],
     logprobs: Optional[int],
     best_of: int,
@@ -1058,14 +1166,19 @@ async def benchmark(
         raise ValueError(f"Unknown backend: {backend}")
     if backend == "openai-embeddings" and profile:
         raise ValueError("Profiling is not supported for embedding benchmark.")
+    if backend == "openai-audio" and profile:
+        raise ValueError("Profiling is not supported for audio benchmark.")
 
     print("Starting initial single prompt test run...")
-    test_prompt, test_prompt_len, test_output_len, test_mm_content = (
-        input_requests[0])
-    if backend != "openai-chat" and test_mm_content is not None:
+    test_prompt, test_prompt_len, test_output_len, test_content = input_requests[0]
+    test_mm_content = (
+        test_content if backend in {"openai-chat", "openai-audio"} else None
+    )
+    if backend not in {"openai-chat", "openai-audio"} and test_content is not None:
         # multi-modal benchmark is only available on OpenAI Chat backend.
         raise ValueError(
-            "Multi-modal content is only supported on 'openai-chat' backend.")
+            "Request attachments are only supported on 'openai-chat' and "
+            "'openai-audio' backends.")
     test_input = RequestFuncInput(
         model=model_id,
         model_name=model_name,
@@ -1137,11 +1250,13 @@ async def benchmark(
     benchmark_start_time = time.perf_counter()
     tasks: List[asyncio.Task] = []
     async for request in get_request(input_requests, request_rate, burstiness):
-        prompt, prompt_len, output_len, mm_content = request
+        prompt, prompt_len, output_len, content = request
         req_model_id, req_model_name = model_id, model_name
         if lora_modules:
             req_lora_module = next(lora_modules)
             req_model_id, req_model_name = req_lora_module, req_lora_module
+
+        mm_content = content if backend in {"openai-chat", "openai-audio"} else None
 
         request_func_input = RequestFuncInput(model=req_model_id,
                                               model_name=req_model_name,
@@ -1188,6 +1303,7 @@ async def benchmark(
         goodput_config_dict=goodput_config_dict,
     )
     image_stats = summarize_image_payloads(input_requests, benchmark_duration)
+    audio_stats = summarize_audio_payloads(input_requests, benchmark_duration)
 
     print("{s:{c}^{n}}".format(s=' Serving Benchmark Result ', n=50, c='='))
     print("{:<40} {:<10}".format("Successful requests:", metrics.completed))
@@ -1223,6 +1339,16 @@ async def benchmark(
                                     image_stats["image_size_std"]))
     print("{:<40} {:<10.2f}".format("Input Image throughput (bytes/s):",
                                     image_stats["input_image_throughput"]))
+    print("{:<40} {:<10}".format("Requests with audios:",
+                                 audio_stats["requests_with_audios"]))
+    print("{:<40} {:<10}".format("Total audio count:",
+                                 audio_stats["total_audio_count"]))
+    print("{:<40} {:<10.2f}".format("Audio length avg:",
+                                    audio_stats["audio_length_avg"]))
+    print("{:<40} {:<10.2f}".format("Audio length std:",
+                                    audio_stats["audio_length_std"]))
+    print("{:<40} {:<10.2f}".format("Input Audio throughput (seconds/s):",
+                                    audio_stats["input_audio_throughput"]))
 
     result = {
         "duration": benchmark_duration,
@@ -1241,6 +1367,7 @@ async def benchmark(
         "generated_texts": [output.generated_text for output in outputs],
         "errors": [output.error for output in outputs],
         **image_stats,
+        **audio_stats,
     }
 
     def process_one_metric(
@@ -1365,9 +1492,19 @@ def main(args: argparse.Namespace):
         api_url = f"http://{args.host}:{args.port}{args.endpoint}"
         base_url = f"http://{args.host}:{args.port}"
 
-    tokenizer = get_tokenizer(tokenizer_id,
-                              tokenizer_mode=tokenizer_mode,
-                              trust_remote_code=args.trust_remote_code)
+    tokenizer: Optional[PreTrainedTokenizerBase] = None
+    try:
+        tokenizer = get_tokenizer(tokenizer_id,
+                                  tokenizer_mode=tokenizer_mode,
+                                  trust_remote_code=args.trust_remote_code)
+    except Exception:
+        if backend != "openai-audio":
+            raise
+        warnings.warn(
+            "Tokenizer load failed for audio benchmark. Falling back to "
+            "whitespace-based output token counting.",
+            stacklevel=2,
+        )
 
     if backend == "openai-embeddings":
         if args.dataset_name != "hf":
@@ -1381,6 +1518,22 @@ def main(args: argparse.Namespace):
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
             random_seed=args.seed,
+        )
+
+    elif backend == "openai-audio":
+        if args.dataset_name != "hf":
+            raise ValueError(
+                "Audio benchmark currently supports only --dataset-name hf."
+            )
+        input_requests = sample_hf_audio_requests(
+            dataset_path=args.dataset_path,
+            dataset_subset=args.hf_subset,
+            dataset_split=args.hf_split,
+            num_requests=args.num_prompts,
+            tokenizer=tokenizer,
+            random_seed=args.seed,
+            fixed_output_len=args.hf_output_len,
+            audio_language=args.audio_language,
         )
 
     elif args.dataset is not None:
@@ -1443,6 +1596,7 @@ def main(args: argparse.Namespace):
                               output_len, _ in input_requests]
 
     elif args.dataset_name == "hf":
+        assert tokenizer is not None
         input_requests = sample_hf_requests(
             dataset_path=args.dataset_path,
             dataset_subset=args.hf_subset,
@@ -1545,6 +1699,244 @@ def main(args: argparse.Namespace):
         with open(file_name, "w", encoding='utf-8') as outfile:
             json.dump(result_json, outfile)
         save_to_pytorch_benchmark_format(args, result_json, file_name)
+
+
+def _count_text_tokens(
+    text: str,
+    tokenizer: Optional[PreTrainedTokenizerBase],
+) -> int:
+    if tokenizer is None:
+        return len(text.split())
+    return len(tokenizer(text).input_ids)
+
+
+def _guess_audio_content_type(filename: str) -> str:
+    lower = filename.lower()
+    if lower.endswith(".mp3"):
+        return "audio/mpeg"
+    if lower.endswith(".flac"):
+        return "audio/flac"
+    if lower.endswith(".ogg"):
+        return "audio/ogg"
+    if lower.endswith(".m4a"):
+        return "audio/mp4"
+    if lower.endswith(".mp4"):
+        return "audio/mp4"
+    if lower.endswith(".webm"):
+        return "audio/webm"
+    return "audio/wav"
+
+
+def _extract_audio_content(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    for key in ("audio", "mp3", "wav", "flac", "ogg", "file", "audio_file", "audio_path", "path"):
+        if key not in data:
+            continue
+        value = data[key]
+        if isinstance(value, str) and value:
+            return {
+                "path": value,
+                "filename": os.path.basename(value),
+                "content_type": _guess_audio_content_type(value),
+            }
+        if hasattr(value, "get_all_samples"):
+            try:
+                decoded = value.get_all_samples()
+                waveform = decoded.data
+                if hasattr(waveform, "cpu"):
+                    waveform = waveform.cpu()
+                waveform = np.asarray(waveform)
+                if waveform.ndim == 2:
+                    waveform = waveform.T
+                return {"audio": (waveform, int(decoded.sample_rate))}
+            except Exception:
+                pass
+        if hasattr(value, "data") and hasattr(value, "sample_rate"):
+            waveform = value.data
+            if hasattr(waveform, "cpu"):
+                waveform = waveform.cpu()
+            waveform = np.asarray(waveform)
+            if waveform.ndim == 2:
+                waveform = waveform.T
+            return {"audio": (waveform, int(value.sample_rate))}
+        if not isinstance(value, dict):
+            continue
+        array = value.get("array")
+        sampling_rate = value.get("sampling_rate")
+        if array is not None and sampling_rate:
+            return {"audio": (array, int(sampling_rate))}
+        raw_bytes = value.get("bytes")
+        if raw_bytes:
+            path = value.get("path")
+            filename = value.get("filename") or (
+                os.path.basename(path) if path else "audio.wav"
+            )
+            return {
+                "bytes": raw_bytes,
+                "filename": filename,
+                "content_type": _guess_audio_content_type(filename),
+            }
+        path = value.get("path")
+        if path:
+            return {
+                "path": path,
+                "filename": os.path.basename(path),
+                "content_type": _guess_audio_content_type(path),
+            }
+    return None
+
+
+def _extract_audio_transcription_text(data: Dict[str, Any]) -> Optional[str]:
+    for key in ("text", "txt", "sentence", "transcript", "transcription", "answer"):
+        text = _as_text(data.get(key))
+        if text:
+            return text
+    metadata = data.get("json")
+    if isinstance(metadata, dict):
+        for key in ("sentence", "transcript", "transcription", "text"):
+            text = _as_text(metadata.get(key))
+            if text:
+                return text
+    return None
+
+
+def _normalize_audio_language(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = value.strip().lower().replace("-", "_")
+    return normalized or None
+
+
+def _whisper_prompt_language_tag(audio_language: Optional[str]) -> Optional[str]:
+    normalized = _normalize_audio_language(audio_language)
+    if normalized is None:
+        return None
+    if normalized == "nan_tw":
+        return "nan"
+    return normalized.split("_", 1)[0]
+
+
+def _resolve_audio_dataset_subset(
+    dataset_path: str,
+    dataset_subset: Optional[str],
+    audio_language: Optional[str],
+) -> Tuple[Optional[str], Optional[str]]:
+    normalized_subset = _normalize_audio_language(dataset_subset)
+    normalized_language = _normalize_audio_language(audio_language)
+
+    if (
+        dataset_path == "google/fleurs"
+        and (normalized_language == "nan_tw" or normalized_subset == "nan_tw")
+    ):
+        raise ValueError(
+            "google/fleurs does not provide audio language 'nan_tw'. "
+            "Use a supported FLEURS language/subset, or switch to a dataset "
+            "that actually contains Taiwanese Minnan."
+        )
+
+    return dataset_subset, normalized_language
+
+
+def _audio_row_matches_language(
+    data: Dict[str, Any],
+    audio_language: Optional[str],
+) -> bool:
+    normalized_language = _normalize_audio_language(audio_language)
+    if normalized_language is None:
+        return True
+
+    for key in ("lang_id", "language", "locale", "lang"):
+        value = data.get(key)
+        if not isinstance(value, str):
+            continue
+        candidate = _normalize_audio_language(value)
+        if candidate == normalized_language:
+            return True
+    metadata = data.get("json")
+    if isinstance(metadata, dict):
+        for key in ("lang_id", "language", "locale", "lang"):
+            value = metadata.get(key)
+            if not isinstance(value, str):
+                continue
+            candidate = _normalize_audio_language(value)
+            if candidate == normalized_language:
+                return True
+    return False
+
+
+def sample_hf_audio_requests(
+    dataset_path: str,
+    dataset_subset: Optional[str],
+    dataset_split: str,
+    num_requests: int,
+    tokenizer: Optional[PreTrainedTokenizerBase],
+    random_seed: int,
+    fixed_output_len: Optional[int] = None,
+    audio_language: Optional[str] = None,
+) -> List[Tuple[str, int, int, Optional[Dict[str, Any]]]]:
+    dataset_subset, audio_language = _resolve_audio_dataset_subset(
+        dataset_path=dataset_path,
+        dataset_subset=dataset_subset,
+        audio_language=audio_language,
+    )
+
+    dataset = load_dataset(dataset_path,
+                           name=dataset_subset,
+                           split=dataset_split,
+                           streaming=True)
+    shuffled_dataset = dataset.shuffle(seed=random_seed)
+    sampled_requests: List[Tuple[str, int, int, Dict[str, Any]]] = []
+    default_prompt = ""
+    if tokenizer is not None and "openai" in getattr(tokenizer, "name_or_path", ""):
+        language_tag = _whisper_prompt_language_tag(audio_language)
+        if language_tag:
+            default_prompt = (
+                f"<|startoftranscript|><|{language_tag}|>"
+                "<|transcribe|><|notimestamps|>"
+            )
+        else:
+            default_prompt = "<|startoftranscript|><|transcribe|><|notimestamps|>"
+    prompt_len = _count_text_tokens(default_prompt, tokenizer)
+    output_len = fixed_output_len if fixed_output_len is not None else 1024
+
+    for data in shuffled_dataset:
+        if len(sampled_requests) == num_requests:
+            break
+        if not _audio_row_matches_language(data, audio_language):
+            continue
+
+        audio_content = _extract_audio_content(data)
+        if audio_content is None:
+            continue
+        if audio_language:
+            audio_content["language"] = audio_language
+
+        completion = _extract_audio_transcription_text(data)
+        if completion is None and fixed_output_len is None:
+            continue
+
+        sampled_requests.append((default_prompt, prompt_len, output_len, audio_content))
+
+    if not sampled_requests:
+        feature_text = (
+            ", ".join(dataset.features.keys())
+            if isinstance(dataset.features, dict)
+            else str(dataset.features)
+        )
+        requested_language = _normalize_audio_language(audio_language)
+        if requested_language:
+            raise ValueError(
+                "Unable to sample HF audio requests from dataset for "
+                f"language '{requested_language}'. "
+                f"dataset={dataset_path}, subset={dataset_subset}, "
+                f"split={dataset_split}. Available features: {feature_text}"
+            )
+        raise ValueError(
+            "Unable to sample HF audio requests from dataset. "
+            "Expected an audio/file column and a transcript-like text column. "
+            f"Available features: {feature_text}"
+        )
+
+    return sampled_requests
 
 
 if __name__ == "__main__":
@@ -1741,7 +2133,6 @@ if __name__ == "__main__":
         "goodput, refer to DistServe paper: https://arxiv.org/pdf/2401.09670 "
         "and the blog: https://hao-ai-lab.github.io/blogs/distserve")
 
-    # group for dataset specific arguments
     sonnet_group = parser.add_argument_group("sonnet dataset options")
     sonnet_group.add_argument(
         "--sonnet-input-len",
@@ -1824,6 +2215,15 @@ if __name__ == "__main__":
         default=None,
         help="Output length for each request. Overrides the output lengths "
         "from the sampled HF dataset.",
+    )
+    hf_group.add_argument(
+        "--audio-language",
+        type=str,
+        default=None,
+        help=(
+            "Requested language code for HF audio datasets. For "
+            "google/fleurs this is applied as a row filter."
+        ),
     )
     hf_group.add_argument(
         "--num-images-per-request",
