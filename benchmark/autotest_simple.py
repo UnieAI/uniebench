@@ -67,6 +67,7 @@ class BenchmarkConfig:
     output_len: int | None
     num_images_per_request: int
     audio_language: str | None
+    require_mm_content: bool
 
 
 def run_cmd(
@@ -284,6 +285,7 @@ def resolve_benchmark_config(
             output_len=None,
             num_images_per_request=1,
             audio_language=None,
+            require_mm_content=False,
         )
 
     if task == "audio":
@@ -299,6 +301,7 @@ def resolve_benchmark_config(
             output_len=args.output_len or DEFAULT_TEXT_OUTPUT_LEN,
             num_images_per_request=1,
             audio_language=args.audio_language,
+            require_mm_content=True,
         )
 
     if task == "vlm":
@@ -314,6 +317,7 @@ def resolve_benchmark_config(
             output_len=args.output_len or DEFAULT_VLM_OUTPUT_LEN,
             num_images_per_request=args.num_images_per_request,
             audio_language=None,
+            require_mm_content=True,
         )
 
     dataset_name = infer_text_dataset_name(dataset_path)
@@ -329,6 +333,7 @@ def resolve_benchmark_config(
         output_len=args.output_len or DEFAULT_TEXT_OUTPUT_LEN,
         num_images_per_request=1,
         audio_language=None,
+        require_mm_content=False,
     )
 
 
@@ -533,6 +538,8 @@ def run_benchmark_for_concurrency(
             cmd.extend(["--hf-split", benchmark_config.hf_split])
         if benchmark_config.audio_language:
             cmd.extend(["--audio-language", benchmark_config.audio_language])
+        if benchmark_config.require_mm_content:
+            cmd.append("--require-mm-content")
         if benchmark_config.output_len is not None:
             cmd.extend(["--hf-output-len", str(benchmark_config.output_len)])
         if benchmark_config.task == "vlm":

@@ -501,6 +501,7 @@ def sample_hf_requests(
     random_seed: int,
     fixed_output_len: Optional[int] = None,
     num_images_per_request: int = 1,
+    require_mm_content: bool = False,
 ) -> List[Tuple[str, str, int, Optional[Dict[str, Collection[str]]]]]:
     if num_images_per_request <= 0:
         raise ValueError("--num-images-per-request must be positive.")
@@ -585,6 +586,8 @@ def sample_hf_requests(
             return None
 
         mm_content = build_mm_content()
+        if require_mm_content and mm_content is None:
+            continue
         if num_images_per_request == 1 or mm_content is None:
             sampled_requests.append((prompt, prompt_len, output_len, mm_content))
             continue
@@ -1606,6 +1609,7 @@ def main(args: argparse.Namespace):
             random_seed=args.seed,
             fixed_output_len=args.hf_output_len,
             num_images_per_request=args.num_images_per_request,
+            require_mm_content=args.require_mm_content,
         )
 
     elif args.dataset_name == "random":
@@ -2232,6 +2236,14 @@ if __name__ == "__main__":
         help=(
             "For HF image datasets, combine this many image/question records "
             "into one request. Default: 1."
+        ),
+    )
+    hf_group.add_argument(
+        "--require-mm-content",
+        action="store_true",
+        help=(
+            "Skip sampled HF rows that do not produce multimodal attachment "
+            "content. Used for VLM/audio dataset runs that must send media."
         ),
     )
 
