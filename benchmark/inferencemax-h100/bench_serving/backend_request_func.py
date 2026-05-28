@@ -28,7 +28,7 @@ class RequestFuncInput:
     best_of: int = 1
     logprobs: Optional[int] = None
     extra_body: Optional[dict] = None
-    multi_modal_content: Optional[dict] = None
+    multi_modal_content: Optional[Union[dict, List[dict]]] = None
     ignore_eos: bool = False
 
 
@@ -344,7 +344,10 @@ async def async_request_openai_chat_completions(
                                      timeout=AIOHTTP_TIMEOUT) as session:
         content = [{"type": "text", "text": request_func_input.prompt}]
         if request_func_input.multi_modal_content:
-            content.append(request_func_input.multi_modal_content)
+            if isinstance(request_func_input.multi_modal_content, list):
+                content.extend(request_func_input.multi_modal_content)
+            else:
+                content.append(request_func_input.multi_modal_content)
         payload = {
             "model": request_func_input.model_name \
                 if request_func_input.model_name else request_func_input.model,

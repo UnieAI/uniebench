@@ -494,7 +494,10 @@ def sample_hf_requests(
     tokenizer: PreTrainedTokenizerBase,
     random_seed: int,
     fixed_output_len: Optional[int] = None,
+    num_images_per_request: int = 1,
 ) -> List[Tuple[str, str, int, Optional[Dict[str, Collection[str]]]]]:
+    if num_images_per_request <= 0:
+        raise ValueError("--num-images-per-request must be positive.")
 
     # Special case for vision_arena dataset
     if dataset_path == 'lmarena-ai/vision-arena-bench-v0.1' \
@@ -524,6 +527,7 @@ def sample_hf_requests(
     shuffled_dataset = dataset.shuffle(seed=random_seed)
     sampled_requests: List[Tuple[str, int, int, Dict[str,
                                                      Collection[str]]]] = []
+    pending_image_group: List[Tuple[str, Optional[str], Optional[Dict[str, Collection[str]]]]] = []
     for data in shuffled_dataset:
         if len(sampled_requests) == num_requests:
             break
@@ -546,36 +550,81 @@ def sample_hf_requests(
             # Prune too long sequences.
             continue
 
-        if "image" in data and isinstance(data["image"], Image):
-            image: Image = data["image"]
-            image = image.convert("RGB")
-            image_data = io.BytesIO()
-            image.save(image_data, format='JPEG')
-            image_base64 = base64.b64encode(
-                image_data.getvalue()).decode("utf-8")
-            mm_content = {
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/jpeg;base64,{image_base64}"
-                },
-            }
-        elif "image" in data and isinstance(data["image"], str):
-            if (data["image"].startswith("http://") or \
-                data["image"].startswith("file://")):
-                image_url = data["image"]
-            else:
-                image_url = f"file://{data['image']}"
+        def build_mm_content() -> Optional[Dict[str, Collection[str]]]:
+            if "image" in data and isinstance(data["image"], Image):
+                image: Image = data["image"]
+                image = image.convert("RGB")
+                image_data = io.BytesIO()
+                image.save(image_data, format='JPEG')
+                image_base64 = base64.b64encode(
+                    image_data.getvalue()).decode("utf-8")
+                return {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{image_base64}"
+                    },
+                }
+            if "image" in data and isinstance(data["image"], str):
+                if (data["image"].startswith("http://") or \
+                    data["image"].startswith("file://")):
+                    image_url = data["image"]
+                else:
+                    image_url = f"file://{data['image']}"
+                return {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": image_url
+                    },
+                }
+            return None
 
-            mm_content = {
-                "type": "image_url",
-                "image_url": {
-                    "url": image_url
-                },
-            }
+        mm_content = build_mm_content()
+        if num_images_per_request == 1 or mm_content is None:
+            sampled_requests.append((prompt, prompt_len, output_len, mm_content))
+            continue
+
+        pending_image_group.append((prompt, completion, mm_content))
+        if len(pending_image_group) < num_images_per_request:
+            continue
+
+        combined_prompt = "\n".join(
+            ["Answer each question in order using the corresponding image."]
+            + [
+                f"Question {index + 1}: {group_prompt}"
+                for index, (group_prompt, _, _) in enumerate(pending_image_group)
+            ]
+        )
+        combined_prompt_len = len(tokenizer(combined_prompt).input_ids)
+        if fixed_output_len is None:
+            completion_text = "\n".join(
+                f"Answer {index + 1}: {group_completion or ''}"
+                for index, (_, group_completion, _) in enumerate(pending_image_group)
+            )
+            combined_output_len = len(tokenizer(completion_text).input_ids)
         else:
-            mm_content = None
+            combined_output_len = fixed_output_len * len(pending_image_group)
 
-        sampled_requests.append((prompt, prompt_len, output_len, mm_content))
+        if fixed_output_len is None and (
+            combined_prompt_len < 4 or combined_output_len < 4
+        ):
+            pending_image_group = []
+            continue
+        if fixed_output_len is None and (
+            combined_prompt_len > 1024
+            or combined_prompt_len + combined_output_len > 2048
+        ):
+            pending_image_group = []
+            continue
+
+        sampled_requests.append(
+            (
+                combined_prompt,
+                combined_prompt_len,
+                combined_output_len,
+                [group_mm_content for _, _, group_mm_content in pending_image_group],
+            )
+        )
+        pending_image_group = []
 
     if not sampled_requests:
         feature_text = ", ".join(feature_names) if feature_names else str(dataset.features)
@@ -693,6 +742,18 @@ def _image_size_from_mm_content(
     return None
 
 
+def _normalize_mm_contents(
+    mm_content: Optional[Any],
+) -> List[Dict[str, Collection[str]]]:
+    if mm_content is None:
+        return []
+    if isinstance(mm_content, list):
+        return [item for item in mm_content if isinstance(item, dict)]
+    if isinstance(mm_content, dict):
+        return [mm_content]
+    return []
+
+
 def summarize_image_payloads(
     input_requests: List[Tuple[str, int, int, Optional[Dict[str, Collection[str]]]]],
     benchmark_duration: float,
@@ -704,17 +765,19 @@ def summarize_image_payloads(
     image_sizes: List[int] = []
 
     for _, _, _, mm_content in input_requests:
-        if not mm_content:
+        mm_contents = _normalize_mm_contents(mm_content)
+        if not mm_contents:
             continue
-        total_image_count += 1
         requests_with_images += 1
-        image_dimensions = _image_dimensions_from_mm_content(mm_content)
-        if image_dimensions is not None:
-            image_widths.append(image_dimensions[0])
-            image_heights.append(image_dimensions[1])
-        image_size = _image_size_from_mm_content(mm_content)
-        if image_size is not None:
-            image_sizes.append(image_size)
+        total_image_count += len(mm_contents)
+        for one_mm_content in mm_contents:
+            image_dimensions = _image_dimensions_from_mm_content(one_mm_content)
+            if image_dimensions is not None:
+                image_widths.append(image_dimensions[0])
+                image_heights.append(image_dimensions[1])
+            image_size = _image_size_from_mm_content(one_mm_content)
+            if image_size is not None:
+                image_sizes.append(image_size)
 
     if image_widths:
         width_values = np.array(image_widths, dtype=np.float64)
@@ -1388,6 +1451,7 @@ def main(args: argparse.Namespace):
             tokenizer=tokenizer,
             random_seed=args.seed,
             fixed_output_len=args.hf_output_len,
+            num_images_per_request=args.num_images_per_request,
         )
 
     elif args.dataset_name == "random":
@@ -1447,6 +1511,7 @@ def main(args: argparse.Namespace):
         result_json["tokenizer_id"] = tokenizer_id
         result_json["best_of"] = args.best_of
         result_json["num_prompts"] = args.num_prompts
+        result_json["num_images_per_request"] = args.num_images_per_request
 
         # Metadata
         if args.metadata:
@@ -1759,6 +1824,15 @@ if __name__ == "__main__":
         default=None,
         help="Output length for each request. Overrides the output lengths "
         "from the sampled HF dataset.",
+    )
+    hf_group.add_argument(
+        "--num-images-per-request",
+        type=int,
+        default=1,
+        help=(
+            "For HF image datasets, combine this many image/question records "
+            "into one request. Default: 1."
+        ),
     )
 
     parser.add_argument(

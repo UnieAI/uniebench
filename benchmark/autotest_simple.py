@@ -62,6 +62,7 @@ class BenchmarkConfig:
     hf_subset: str | None
     hf_split: str | None
     output_len: int | None
+    num_images_per_request: int
 
 
 def run_cmd(
@@ -273,6 +274,7 @@ def resolve_benchmark_config(
             hf_subset=args.hf_subset or DEFAULT_EMBEDDING_HF_SUBSET,
             hf_split=args.hf_split or DEFAULT_EMBEDDING_HF_SPLIT,
             output_len=None,
+            num_images_per_request=1,
         )
 
     if task == "vlm":
@@ -286,6 +288,7 @@ def resolve_benchmark_config(
             hf_subset=args.hf_subset,
             hf_split=args.hf_split or DEFAULT_VLM_HF_SPLIT,
             output_len=args.output_len or DEFAULT_VLM_OUTPUT_LEN,
+            num_images_per_request=args.num_images_per_request,
         )
 
     dataset_name = infer_text_dataset_name(dataset_path)
@@ -299,6 +302,7 @@ def resolve_benchmark_config(
         hf_subset=args.hf_subset,
         hf_split=args.hf_split or ("train" if dataset_name == "hf" else None),
         output_len=args.output_len or DEFAULT_TEXT_OUTPUT_LEN,
+        num_images_per_request=1,
     )
 
 
@@ -503,6 +507,13 @@ def run_benchmark_for_concurrency(
             cmd.extend(["--hf-split", benchmark_config.hf_split])
         if benchmark_config.output_len is not None:
             cmd.extend(["--hf-output-len", str(benchmark_config.output_len)])
+        if benchmark_config.task == "vlm":
+            cmd.extend(
+                [
+                    "--num-images-per-request",
+                    str(benchmark_config.num_images_per_request),
+                ]
+            )
     elif benchmark_config.output_len is not None:
         cmd.extend(
             ["--sharegpt-output-len", str(benchmark_config.output_len)]
@@ -697,6 +708,15 @@ def configure_argparse() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--num-images-per-request",
+        type=int,
+        default=1,
+        help=(
+            "For VLM HF datasets, combine this many image/question rows into "
+            "one request. Default: 1."
+        ),
+    )
+    parser.add_argument(
         "--result-dir",
         type=Path,
         default=root / "results",
@@ -821,6 +841,10 @@ def main() -> int:
     LOG.info("[info] hf-subset: %s", benchmark_config.hf_subset)
     LOG.info("[info] hf-split: %s", benchmark_config.hf_split)
     LOG.info("[info] output-len: %s", benchmark_config.output_len)
+    LOG.info(
+        "[info] num-images-per-request: %s",
+        benchmark_config.num_images_per_request,
+    )
     LOG.info("[info] result-dir: %s", result_dir)
     LOG.info("[info] concurrency: %s", concurrency_values)
     LOG.info("[info] seed: %s", args.seed)
