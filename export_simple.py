@@ -20,6 +20,14 @@ IMAGE_STAT_COLUMNS = [
     "input_image_throughput",
 ]
 
+AUDIO_STAT_COLUMNS = [
+    "requests_with_audios",
+    "total_audio_count",
+    "audio_length_avg",
+    "audio_length_std",
+    "input_audio_throughput",
+]
+
 operation_count = 0
 def operation_check():
     global operation_count
@@ -60,6 +68,9 @@ def _collect_rows(test_name: str):
             if header is None:
                 data_keys = list(data.keys())
                 for column in IMAGE_STAT_COLUMNS:
+                    if column not in data_keys:
+                        data_keys.append(column)
+                for column in AUDIO_STAT_COLUMNS:
                     if column not in data_keys:
                         data_keys.append(column)
                 if 'engine' in data_keys:
@@ -134,6 +145,12 @@ def benchmark_post_processing(path):
             "image_size_avg": data.get('image_size_avg', ''),
             "image_size_std": data.get('image_size_std', ''),
             "input_image_throughput": data.get('input_image_throughput', ''),
+
+            "requests_with_audios": data.get('requests_with_audios', ''),
+            "total_audio_count": data.get('total_audio_count', ''),
+            "audio_length_avg": data.get('audio_length_avg', ''),
+            "audio_length_std": data.get('audio_length_std', ''),
+            "input_audio_throughput": data.get('input_audio_throughput', ''),
         }
         all_result.append(result)
     
