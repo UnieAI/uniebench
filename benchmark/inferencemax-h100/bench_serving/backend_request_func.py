@@ -8,7 +8,7 @@ import time
 import traceback
 import wave
 from dataclasses import dataclass, field
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Union
 
 import aiohttp
 import huggingface_hub.constants
@@ -592,32 +592,85 @@ async def async_request_openai_audio_transcriptions(
     ttft = 0.0
     st = time.perf_counter()
     most_recent_timestamp = st
+
+    def extract_audio_text(data: dict[str, Any]) -> Optional[str]:
+        text = data.get("text")
+        if isinstance(text, str):
+            return text
+
+        choices = data.get("choices")
+        if isinstance(choices, list) and choices:
+            first_choice = choices[0]
+            if isinstance(first_choice, dict):
+                delta = first_choice.get("delta")
+                if isinstance(delta, dict):
+                    delta_text = delta.get("content")
+                    if isinstance(delta_text, str):
+                        return delta_text
+                    delta_text = delta.get("text")
+                    if isinstance(delta_text, str):
+                        return delta_text
+                message = first_choice.get("message")
+                if isinstance(message, dict):
+                    message_text = message.get("content")
+                    if isinstance(message_text, str):
+                        return message_text
+
+        segments = data.get("segments")
+        if isinstance(segments, list) and segments:
+            texts: List[str] = []
+            for segment in segments:
+                if isinstance(segment, dict):
+                    segment_text = segment.get("text")
+                    if isinstance(segment_text, str) and segment_text:
+                        texts.append(segment_text)
+            if texts:
+                return "".join(texts)
+
+        return None
+
+    def iter_audio_payloads(chunk_text: str, content_type: str) -> List[str]:
+        payloads: List[str] = []
+        for line in chunk_text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("data:"):
+                payload = line.removeprefix("data:").strip()
+                if payload:
+                    payloads.append(payload)
+            elif "application/json" in content_type or line.startswith("{"):
+                payloads.append(line)
+        return payloads
+
     try:
         async with aiohttp.ClientSession(trust_env=True,
                                          timeout=AIOHTTP_TIMEOUT) as session:
             async with session.post(url=api_url, data=form,
                                     headers=headers) as response:
                 if response.status == 200:
+                    content_type = response.headers.get("Content-Type", "")
                     async for chunk_bytes in response.content:
                         chunk_bytes = chunk_bytes.strip()
                         if not chunk_bytes:
                             continue
-
-                        chunk = chunk_bytes.decode("utf-8").removeprefix(
-                            "data: ")
-                        if chunk != "[DONE]":
+                        chunk_text = chunk_bytes.decode("utf-8")
+                        payloads = iter_audio_payloads(chunk_text, content_type)
+                        for payload in payloads:
+                            if payload == "[DONE]":
+                                continue
                             timestamp = time.perf_counter()
-                            data = json.loads(chunk)
+                            data = json.loads(payload)
 
-                            if "text" in data:
-                                text = data.get("text")
+                            text = extract_audio_text(data)
+                            if text is not None:
                                 if ttft == 0.0:
                                     ttft = timestamp - st
                                     output.ttft = ttft
                                 else:
                                     output.itl.append(timestamp -
                                                       most_recent_timestamp)
-                                generated_text += text or ""
+                                generated_text += text
                             elif usage := data.get("usage"):
                                 output.output_tokens = usage.get(
                                     "completion_tokens")
@@ -626,7 +679,11 @@ async def async_request_openai_audio_transcriptions(
 
                     output.generated_text = generated_text
                     output.success = True
+                    if most_recent_timestamp == st:
+                        most_recent_timestamp = time.perf_counter()
                     output.latency = most_recent_timestamp - st
+                    if output.ttft == 0.0:
+                        output.ttft = output.latency
                 else:
                     body = await response.text()
                     body = body.strip()
@@ -637,6 +694,9 @@ async def async_request_openai_audio_transcriptions(
                     output.success = False
     except Exception:
         output.success = False
+        output.latency = time.perf_counter() - st
+        if output.ttft == 0.0:
+            output.ttft = output.latency
         exc_info = sys.exc_info()
         output.error = "".join(traceback.format_exception(*exc_info))
 
