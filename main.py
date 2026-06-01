@@ -92,7 +92,7 @@ def run_single_server(cfg: DictConfig) -> None:
                     )
 
                     if container.path == "none":
-                        logging.info("start service: skipped (assume existing service is already running)")
+                        logging.info("start service: skipped (assume service is already running)")
                     else:
                         logging.info("start service: %s", container.name)
                         service_name = None

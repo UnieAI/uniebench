@@ -86,7 +86,7 @@ def _export_to_csv_fallback(test_name: str, worksheet_name: str, header, rows):
 
 def export(test_name: str, sheet_name: str, worksheet_name = None):
     worksheet_name = worksheet_name or test_name
-    logging.info('sheet_name', sheet_name)
+    logging.info('sheet_name %s', sheet_name)
     header, rows = _collect_rows(test_name)
 
     # 1. Google Sheets 權限設置（將 service_account.json 放在腳本同目錄下）

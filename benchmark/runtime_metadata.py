@@ -112,7 +112,7 @@ def get_sample_output(cfg) -> str:
         response.raise_for_status()
         data = response.json()
     except requests.RequestException as exc:
-        return f"request_failed or not support(audio): {exc}"
+        return f"request_failed or not support: {exc}"
     except ValueError as exc:
         return f"invalid_json: {exc}"
 
