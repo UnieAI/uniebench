@@ -1,6 +1,7 @@
 autotest:
   name: pyarmor-cuda-129-1.7.0-test1
   sheet_name: 2026Q2/Charmander
+  openai_api_key: sk-xxx
 server:
   platform: Charmander
   id: default
@@ -48,6 +49,24 @@ default_config:
       - 128
       - 256
       - 512
+  - id: embedding
+    config:
+      name:
+      - vllm-bench
+      endpoint_type: embedding
+      model_name: ${server.model_name}
+      dataset_path: ./datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/ShareGPT_V3_unfiltered_cleaned_split.json
+      token_lengths:
+      - input_len: none
+        output_len: 1024
+      concurrency:
+      - 1
+      # - 16
+      # - 32
+      # - 64
+      # - 128
+      # - 256
+      # - 512
   - id: audio
     config:
       name:

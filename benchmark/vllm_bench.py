@@ -23,6 +23,9 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency, seed, request_rate):
     RESULT_ROOT = f'./results/{cfg.autotest.name}/vllm_bench'
     os.makedirs(RESULT_ROOT, exist_ok=True)
 
+    base_url = f'{cfg.server.base_url}'
+    if cfg.server.port != 0:
+        base_url += f':{cfg.server.port}'
     if cfg.benchmark.endpoint_type == 'audio':
         backend = 'openai-audio'
         endpoint = '/v1/audio/transcriptions'
@@ -32,7 +35,7 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency, seed, request_rate):
         
         cmd = [
             'vllm', 'bench', 'serve',
-            '--base-url', f'{cfg.server.base_url}:{cfg.server.port}',
+            '--base-url', base_url,
             '--endpoint', endpoint,
             '--backend', backend,
             '--served-model-name', cfg.server.model_id,
@@ -50,13 +53,34 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency, seed, request_rate):
             '--result-filename', 'full_result.json',
             '--seed', f'{seed}',
         ]
+    elif cfg.benchmark.endpoint_type == 'embedding':
+        backend = 'openai-embeddings'
+        endpoint = '/v1/embeddings'
+        cmd = [
+            'vllm', 'bench', 'serve',
+            '--base-url', base_url,
+            '--endpoint', endpoint,
+            '--served-model-name', cfg.server.model_id,
+            '--backend', backend,
+            '--dataset-name', 'sharegpt',
+            '--dataset-path', cfg.benchmark.dataset_path,
+            '--num-prompts', f'{concurrency * 4}',
+            '--max-concurrency', f'{concurrency}',
+            '--request-rate', 'inf',
+            '--skip-chat-template',
+            '--save-result',
+            '--percentile-metrics', 'e2el',
+            '--result-dir', RESULT_ROOT,
+            '--result-filename', 'full_result.json',
+            '--seed', f'{seed}',
+        ]
     elif cfg.benchmark.endpoint_type == 'text':
         backend = 'openai'
         endpoint = '/v1/completions'
 
         cmd = [
             'vllm', 'bench', 'serve',
-            '--base-url', f'{cfg.server.base_url}:{cfg.server.port}',
+            '--base-url', base_url,
             '--endpoint', endpoint,
             '--backend', backend,
             '--served-model-name', cfg.server.model_id,
@@ -87,11 +111,16 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency, seed, request_rate):
     else:
         raise ValueError(f"endpoint_type '{cfg.benchmark.endpoint_type}' not supported")
 
+    local_env = os.environ.copy()
+    if 'openai_api_key' in cfg.autotest:
+        local_env['OPENAI_API_KEY'] = cfg.autotest.openai_api_key
+    
     logging.debug("run vllm_bench command")
     logging.log(TRACE_LEVEL, "command: %s", cmd)
     try:
         subprocess.run(
             cmd,
+            env=local_env,
             capture_output=False,
             stdout=sys.stdout,
             stderr=sys.stderr,
@@ -113,45 +142,55 @@ def benchmark_post_processing(cfg: DictConfig, container, concurrency, seed = No
     source = f'{RESULT_ROOT}/full_result.json'
     with open(source, 'r') as fr:
         data = json.load(fr)
-    
-    result = {
-        "platform": cfg.server.platform,
-        "engine": container.name,
-        "tp_size": container.tp_size,
-        "benchmark": 'inferencemax',
-        "remark": cfg.server.remark if 'remark' in cfg.server else '',
-        "seed": seed if seed is not None else "random",
+    try:
+        result = {
+            "platform": cfg.server.platform,
+            "engine": container.name,
+            "tp_size": container.tp_size,
+            "benchmark": 'inferencemax',
+            "remark": cfg.server.remark if 'remark' in cfg.server else '',
+            "seed": seed if seed is not None else "random",
 
-        "request_count": data['completed'],
-        "interval": data['duration'] * 1000, # second to ms
-    }
-    if cfg.benchmark.endpoint_type == 'text':
-        result["concurrency"] = data['max_concurrency']
-    else:
-        result["request_rate"] = data['request_rate']
-    result.update({
-        "model_name": data['tokenizer_id'],
-        "input_tokens": data['total_input_tokens'] / data['completed'],
-        "output_tokens": data['total_output_tokens'] / data['completed'],
+            "request_count": data['completed'],
+            "interval": data['duration'] * 1000, # second to ms
+        }
+        if cfg.benchmark.endpoint_type == 'text':
+            result["concurrency"] = data['max_concurrency']
+        else:
+            result["request_rate"] = data['request_rate']
+        result.update({
+            "model_name": data['tokenizer_id'],
+            "input_tokens": data['total_input_tokens'] / data['completed'] if 'total_input_tokens' in data else 'N/A',
+            "output_tokens": data['total_output_tokens'] / data['completed'] if 'total_output_tokens' in data else 'N/A',
 
-        "request_throughput": data['request_throughput'],
-        "output_token_throughput": data['output_throughput'],
+            "request_throughput": data['request_throughput'],
+            "output_token_throughput": data['output_throughput'] if 'output_throughput' in data else 'N/A',
+        })
 
-        "request_latency.avg": data['mean_e2el_ms'],
-        "request_latency.median": data['median_e2el_ms'],
-        "request_latency.std": data['std_e2el_ms'],
-        "request_latency.p99": data['p99_e2el_ms'],
-
-        "time_to_first_token.avg": data['mean_ttft_ms'],
-        "time_to_first_token.median": data['median_ttft_ms'],
-        "time_to_first_token.std": data['std_ttft_ms'],
-        "time_to_first_token.p99": data['p99_ttft_ms'],
-
-        "inter_token_latency.avg": data['mean_itl_ms'],
-        "inter_token_latency.median": data['median_itl_ms'],
-        "inter_token_latency.std": data['std_itl_ms'],
-        "inter_token_latency.p99": data['p99_itl_ms'],
-    })
+        if 'mean_e2el_ms' in data:
+            result.update({
+                "request_latency.avg": data['mean_e2el_ms'],
+                "request_latency.median": data['median_e2el_ms'],
+                "request_latency.std": data['std_e2el_ms'],
+                "request_latency.p99": data['p99_e2el_ms'],
+            })
+        if 'mean_ttft_ms' in data:
+            result.update({
+                "time_to_first_token.avg": data['mean_ttft_ms'],
+                "time_to_first_token.median": data['median_ttft_ms'],
+                "time_to_first_token.std": data['std_ttft_ms'],
+                "time_to_first_token.p99": data['p99_ttft_ms'],
+            })
+        if 'mean_itl_ms' in data:
+            result.update({
+                "inter_token_latency.avg": data['mean_itl_ms'],
+                "inter_token_latency.median": data['median_itl_ms'],
+                "inter_token_latency.std": data['std_itl_ms'],
+                "inter_token_latency.p99": data['p99_itl_ms'],
+            })
+    except Exception as e:
+        print('failed', e)
+        exit()
     result.update(collect_runtime_metadata(cfg))
     
     dist = os.path.join(dist_folder, 'result.json')
