@@ -90,7 +90,7 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency, seed, request_rate):
             '--max-concurrency', f'{concurrency}',
             '--request-rate', 'inf',
             '--save-result',
-            '--percentile-metrics', 'e2el',
+            '--percentile-metrics', 'ttft,tpot,itl,e2el',
             '--result-dir', RESULT_ROOT,
             '--result-filename', 'full_result.json',
             '--ignore-eos',
