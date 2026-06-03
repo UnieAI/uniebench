@@ -1,4 +1,4 @@
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 import logging
 import subprocess
 import sys
@@ -155,6 +155,8 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency, seed, request_rate):
 
 def benchmark_post_processing(cfg: DictConfig, container, concurrency, seed = None):
     RESULT_ROOT = f'./results/{cfg.autotest.name}/vllm_bench'
+    NaN = float('nan')
+    NA = 'N/A'
     os.makedirs(RESULT_ROOT, exist_ok=True)
 
     benchmark_date = dt.now().strftime('%Y%m%d-%H%M%S')
@@ -170,45 +172,35 @@ def benchmark_post_processing(cfg: DictConfig, container, concurrency, seed = No
             "platform": cfg.server.platform,
             "engine": container.name,
             "tp_size": container.tp_size,
-            "benchmark": 'inferencemax',
-            "remark": cfg.server.remark if 'remark' in cfg.server else '',
+            "benchmark": 'vllm-bench',
+            "remark": OmegaConf.select(cfg, "server.remark", default=NA),
             "seed": seed if seed is not None else "random",
+            "request_count": data.get('completed', NaN),
+            "interval": data.get('duration', NaN) * 1000, # second to ms
+            "concurrency": data.get('max_concurrency', NaN),
+            "request_rate": data.get('request_rate', NaN),
+            "model_name": data.get('tokenizer_id', NA),
+            "input_tokens": data.get('total_input_tokens', NaN) / data.get('completed', NaN),
+            "output_tokens": data.get('total_output_tokens', NaN) / data.get('completed', NaN),
+            "request_throughput": data.get('request_throughput', NaN),
+            "output_token_throughput": data.get('output_throughput', NaN),
 
-            "request_count": data['completed'],
-            "interval": data['duration'] * 1000, # second to ms
+            "request_latency.avg": data.get('mean_e2el_ms', NaN),
+            "request_latency.median": data.get('median_e2el_ms', NaN),
+            "request_latency.std": data.get('std_e2el_ms', NaN),
+            "request_latency.p99": data.get('p99_e2el_ms', NaN),
+
+            "time_to_first_token.avg": data.get('mean_ttft_ms', NaN),
+            "time_to_first_token.median": data.get('median_ttft_ms', NaN),
+            "time_to_first_token.std": data.get('std_ttft_ms', NaN),
+            "time_to_first_token.p99": data.get('p99_ttft_ms', NaN),
+
+            "inter_token_latency.avg": data.get('mean_itl_ms', NaN),
+            "inter_token_latency.median": data.get('median_itl_ms', NaN),
+            "inter_token_latency.std": data.get('std_itl_ms', NaN),
+            "inter_token_latency.p99": data.get('p99_itl_ms', NaN),
         }
-        result["concurrency"] = data['max_concurrency'] if 'max_concurrency' in data else 'N/A'
-        result["request_rate"] = data['request_rate'] if 'request_rate' in data else 'N/A'
-        result.update({
-            "model_name": data['tokenizer_id'],
-            "input_tokens": data['total_input_tokens'] / data['completed'] if 'total_input_tokens' in data else 'N/A',
-            "output_tokens": data['total_output_tokens'] / data['completed'] if 'total_output_tokens' in data else 'N/A',
 
-            "request_throughput": data['request_throughput'],
-            "output_token_throughput": data['output_throughput'] if 'output_throughput' in data else 'N/A',
-        })
-
-        if 'mean_e2el_ms' in data:
-            result.update({
-                "request_latency.avg": data['mean_e2el_ms'],
-                "request_latency.median": data['median_e2el_ms'],
-                "request_latency.std": data['std_e2el_ms'],
-                "request_latency.p99": data['p99_e2el_ms'],
-            })
-        if 'mean_ttft_ms' in data:
-            result.update({
-                "time_to_first_token.avg": data['mean_ttft_ms'],
-                "time_to_first_token.median": data['median_ttft_ms'],
-                "time_to_first_token.std": data['std_ttft_ms'],
-                "time_to_first_token.p99": data['p99_ttft_ms'],
-            })
-        if 'mean_itl_ms' in data:
-            result.update({
-                "inter_token_latency.avg": data['mean_itl_ms'],
-                "inter_token_latency.median": data['median_itl_ms'],
-                "inter_token_latency.std": data['std_itl_ms'],
-                "inter_token_latency.p99": data['p99_itl_ms'],
-            })
     except Exception as e:
         print('failed', e)
         exit()
