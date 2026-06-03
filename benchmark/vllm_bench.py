@@ -74,6 +74,29 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency, seed, request_rate):
             '--result-filename', 'full_result.json',
             '--seed', f'{seed}',
         ]
+    elif cfg.benchmark.endpoint_type == 'image-text':
+        backend = 'openai-chat'
+        endpoint = '/v1/chat/completions'
+        cmd = [
+            'vllm', 'bench', 'serve',
+            '--base-url', base_url,
+            '--endpoint', endpoint,
+            '--served-model-name', cfg.server.model_id,
+            '--backend', backend,
+            '--dataset-name', 'hf',
+            '--dataset-path', cfg.benchmark.dataset_path,
+            '--hf-split', cfg.benchmark.split,
+            '--num-prompts', f'{concurrency * 4}',
+            '--max-concurrency', f'{concurrency}',
+            '--request-rate', 'inf',
+            '--save-result',
+            '--percentile-metrics', 'e2el',
+            '--result-dir', RESULT_ROOT,
+            '--result-filename', 'full_result.json',
+            '--ignore-eos',
+            '--seed', f'{seed}',
+            '--hf-output-len', str(token_lengths.output_len)
+        ]
     elif cfg.benchmark.endpoint_type == 'text':
         backend = 'openai'
         endpoint = '/v1/completions'
@@ -154,10 +177,8 @@ def benchmark_post_processing(cfg: DictConfig, container, concurrency, seed = No
             "request_count": data['completed'],
             "interval": data['duration'] * 1000, # second to ms
         }
-        if cfg.benchmark.endpoint_type == 'text':
-            result["concurrency"] = data['max_concurrency']
-        else:
-            result["request_rate"] = data['request_rate']
+        result["concurrency"] = data['max_concurrency'] if 'max_concurrency' in data else 'N/A'
+        result["request_rate"] = data['request_rate'] if 'request_rate' in data else 'N/A'
         result.update({
             "model_name": data['tokenizer_id'],
             "input_tokens": data['total_input_tokens'] / data['completed'] if 'total_input_tokens' in data else 'N/A',

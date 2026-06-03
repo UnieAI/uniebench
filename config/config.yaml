@@ -67,6 +67,25 @@ default_config:
       # - 128
       # - 256
       # - 512
+  - id: image # or more precisely, the benchmark is for Image-Text-to-Text model
+    config:
+      name:
+      - vllm-bench
+      endpoint_type: image-text
+      model_name: ${server.model_name}
+      dataset_path: lmarena-ai/VisionArena-Chat
+      split: train
+      token_lengths:
+      - input_len: none
+        output_len: 1024
+      concurrency:
+      - 1
+      - 16
+      - 32
+      - 64
+      - 128
+      - 256
+      - 512
   - id: audio
     config:
       name:
