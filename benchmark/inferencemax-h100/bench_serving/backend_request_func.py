@@ -52,6 +52,30 @@ class RequestFuncOutput:
     tpot: float = 0.0  # avg next-token latencies
     prompt_len: int = 0
     error: str = ""
+    status_code: Optional[int] = None
+
+
+def _trim_error_body(body: str, limit: int = 500) -> str:
+    body = body.strip()
+    if len(body) <= limit:
+        return body
+    return body[:limit] + "..."
+
+
+async def _set_http_error(
+    output: RequestFuncOutput,
+    response: aiohttp.ClientResponse,
+) -> None:
+    output.status_code = response.status
+    try:
+        body = _trim_error_body(await response.text())
+    except Exception:
+        body = ""
+    if body:
+        output.error = f"HTTP {response.status} {response.reason}: {body}"
+    else:
+        output.error = f"HTTP {response.status} {response.reason}"
+    output.success = False
 
 
 async def async_request_tgi(
@@ -115,8 +139,7 @@ async def async_request_tgi(
                     output.success = True
                     output.generated_text = data["generated_text"]
                 else:
-                    output.error = response.reason or ""
-                    output.success = False
+                    await _set_http_error(output, response)
         except Exception:
             output.success = False
             exc_info = sys.exc_info()
@@ -183,8 +206,7 @@ async def async_request_trt_llm(
                     output.success = True
 
                 else:
-                    output.error = response.reason or ""
-                    output.success = False
+                    await _set_http_error(output, response)
         except Exception:
             output.success = False
             exc_info = sys.exc_info()
@@ -227,8 +249,7 @@ async def async_request_deepspeed_mii(
                     output.generated_text = parsed_resp["text"][0]
                     output.success = True
                 else:
-                    output.error = response.reason or ""
-                    output.success = False
+                    await _set_http_error(output, response)
         except Exception:
             output.success = False
             exc_info = sys.exc_info()
@@ -327,8 +348,7 @@ async def async_request_openai_completions(
                     output.generated_text = generated_text
                     output.latency = most_recent_timestamp - st
                 else:
-                    output.error = response.reason or ""
-                    output.success = False
+                    await _set_http_error(output, response)
         except Exception:
             output.success = False
             exc_info = sys.exc_info()
@@ -426,8 +446,7 @@ async def async_request_openai_chat_completions(
                     output.success = True
                     output.latency = most_recent_timestamp - st
                 else:
-                    output.error = response.reason or ""
-                    output.success = False
+                    await _set_http_error(output, response)
         except Exception:
             output.success = False
             exc_info = sys.exc_info()
@@ -481,8 +500,7 @@ async def async_request_openai_embeddings(
                         output.error = "No embedding vectors returned."
                         output.success = False
                 else:
-                    output.error = response.reason or ""
-                    output.success = False
+                    await _set_http_error(output, response)
         except Exception:
             output.success = False
             output.latency = time.perf_counter() - st

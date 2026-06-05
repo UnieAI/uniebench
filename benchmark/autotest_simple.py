@@ -52,6 +52,7 @@ class ComposeInfo:
     host_port: int | None
     tokenizer: str
     base_url: str | None = None
+    served_model_name: str | None = None
 
 
 @dataclass
@@ -103,7 +104,7 @@ def benchmark_base_url(info: ComposeInfo) -> str:
         return info.base_url
     if info.host_port is None:
         raise RuntimeError(f"No host port/base URL available for {info.service_name}")
-    return f"http://0.0.0.0:{info.host_port}"
+    return f"http://127.0.0.1:{info.host_port}"
 
 
 def healthcheck_url(info: ComposeInfo) -> str:
@@ -223,6 +224,8 @@ def parse_concurrency(raw: str) -> list[int]:
 def resolve_request_model_name(configured_model_name: str, info: ComposeInfo) -> str:
     if configured_model_name != DEFAULT_MODEL_NAME:
         return configured_model_name
+    if info.served_model_name:
+        return info.served_model_name
     return info.service_name
 
 
@@ -321,6 +324,22 @@ def resolve_benchmark_config(
         )
 
     dataset_name = infer_text_dataset_name(dataset_path)
+    if task == "chat":
+        return BenchmarkConfig(
+            task=task,
+            benchmark_script=benchmark_script,
+            dataset_name=dataset_name,
+            dataset_path=dataset_path,
+            backend=args.backend or "openai-chat",
+            endpoint=args.endpoint or "/v1/chat/completions",
+            hf_subset=args.hf_subset,
+            hf_split=args.hf_split or ("train" if dataset_name == "hf" else None),
+            output_len=args.output_len or DEFAULT_TEXT_OUTPUT_LEN,
+            num_images_per_request=1,
+            audio_language=None,
+            require_mm_content=False,
+        )
+
     return BenchmarkConfig(
         task=task,
         benchmark_script=benchmark_script,
@@ -337,9 +356,9 @@ def resolve_benchmark_config(
     )
 
 
-def find_model_path(command: str | list[str] | None) -> str | None:
+def _command_tokens(command: str | list[str] | None) -> list[str]:
     if command is None:
-        return None
+        return []
     if isinstance(command, list):
         tokens: list[str] = []
         for part in command:
@@ -353,14 +372,27 @@ def find_model_path(command: str | list[str] | None) -> str | None:
             tokens = shlex.split(command)
         except ValueError:
             tokens = command.split()
+    return tokens
 
+
+def find_flag_value(command: str | list[str] | None, *flags: str) -> str | None:
+    tokens = _command_tokens(command)
+    flag_set = set(flags)
     for i, token in enumerate(tokens):
-        if token in {"--model", "--model-path"} and i + 1 < len(tokens):
+        if token in flag_set and i + 1 < len(tokens):
             return tokens[i + 1]
-        if token.startswith("--model="):
-            return token.split("=", 1)[1]
-        if token.startswith("--model-path="):
-            return token.split("=", 1)[1]
+        for flag in flag_set:
+            prefix = f"{flag}="
+            if token.startswith(prefix):
+                return token.split("=", 1)[1]
+    return None
+
+
+def find_model_path(command: str | list[str] | None) -> str | None:
+    tokens = _command_tokens(command)
+    model_path = find_flag_value(command, "--model", "--model-path")
+    if model_path:
+        return model_path
 
     # Support `vllm serve <model_path>` style command.
     for i in range(len(tokens) - 2):
@@ -404,7 +436,9 @@ def parse_compose_with_docker(compose_file: Path, root: Path) -> ComposeInfo:
     service_name = next(iter(services))
     service = services[service_name]
     host_port = find_host_port(service.get("ports"))
-    tokenizer = find_model_path(service.get("command"))
+    command = service.get("command")
+    tokenizer = find_model_path(command)
+    served_model_name = find_flag_value(command, "--served-model-name")
 
     if host_port is None:
         raise RuntimeError(f"Unable to extract host port from {compose_file}")
@@ -416,6 +450,7 @@ def parse_compose_with_docker(compose_file: Path, root: Path) -> ComposeInfo:
         service_name=service_name,
         host_port=host_port,
         tokenizer=tokenizer,
+        served_model_name=served_model_name,
     )
 
 
@@ -441,24 +476,54 @@ def parse_compose_fallback(compose_file: Path) -> ComposeInfo:
         if not vllm_match:
             raise RuntimeError(f"Unable to extract model path from {compose_file}")
         tokenizer = vllm_match.group(1)
+    served_model_match = re.search(
+        r"--served-model-name(?:=|\s+)([^\s\"']+)",
+        content,
+    )
+    served_model_name = (
+        served_model_match.group(1) if served_model_match else None
+    )
 
     return ComposeInfo(
         compose_file=compose_file,
         service_name=service_name,
         host_port=host_port,
         tokenizer=tokenizer,
+        served_model_name=served_model_name,
     )
 
 
 def load_compose_info(compose_file: Path, root: Path) -> ComposeInfo:
+    fallback_info: ComposeInfo | None = None
     try:
-        return parse_compose_with_docker(compose_file, root=root)
+        fallback_info = parse_compose_fallback(compose_file)
+    except Exception:
+        fallback_info = None
+
+    try:
+        docker_info = parse_compose_with_docker(compose_file, root=root)
     except Exception as exc:
         LOG.warning(
             f"[warn] docker compose config parse failed for {compose_file.name}: {exc}; "
             "using text fallback parser"
         )
-        return parse_compose_fallback(compose_file)
+        if fallback_info is not None:
+            return fallback_info
+        raise
+
+    if fallback_info is None:
+        return docker_info
+
+    return ComposeInfo(
+        compose_file=docker_info.compose_file,
+        service_name=docker_info.service_name or fallback_info.service_name,
+        host_port=docker_info.host_port or fallback_info.host_port,
+        tokenizer=docker_info.tokenizer or fallback_info.tokenizer,
+        base_url=docker_info.base_url or fallback_info.base_url,
+        served_model_name=(
+            docker_info.served_model_name or fallback_info.served_model_name
+        ),
+    )
 
 
 def wait_for_health(url: str, timeout_sec: int, interval_sec: int) -> None:
@@ -489,6 +554,7 @@ def run_benchmark_for_concurrency(
     python_bin: str,
 ) -> None:
     result_filename = f"{info.service_name}.{concurrency}.json"
+    request_model_name = resolve_request_model_name(model_name, info)
     if benchmark_config.dataset_name == "sharegpt":
         dataset_path_str = str(
             Path(benchmark_config.dataset_path).expanduser().resolve()
@@ -500,7 +566,9 @@ def run_benchmark_for_concurrency(
         python_bin,
         str(benchmark_config.benchmark_script),
         "--model",
-        resolve_request_model_name(model_name, info),
+        info.tokenizer,
+        "--served-model-name",
+        request_model_name,
         "--base-url",
         benchmark_base_url(info),
         "--tokenizer",
@@ -529,7 +597,13 @@ def run_benchmark_for_concurrency(
         "--percentile-metrics",
         "ttft,tpot,itl,e2el",
     ]
-    if benchmark_config.task in {"text", "vlm"}:
+    LOG.info(
+        "[info] benchmark request model=%s benchmark model=%s tokenizer=%s",
+        request_model_name,
+        info.tokenizer,
+        info.tokenizer,
+    )
+    if benchmark_config.task in {"text", "chat", "vlm"}:
         cmd.append("--ignore-eos")
     if benchmark_config.dataset_name == "hf":
         if benchmark_config.hf_subset:
@@ -655,6 +729,7 @@ def compose_down(root: Path, info: ComposeInfo) -> None:
 
 def iterate_compose_files(service_dir: Path) -> Iterable[Path]:
     files = sorted(service_dir.glob("*.yml"))
+    files.extend(sorted(service_dir.glob("*.yaml")))
     if not files:
         raise RuntimeError(f"No compose files found in {service_dir}")
     return files
@@ -684,7 +759,7 @@ def configure_argparse() -> argparse.ArgumentParser:
     parser.add_argument(
         "--benchmark-task",
         default="auto",
-        choices=["auto", "text", "vlm", "audio", "embedding"],
+        choices=["auto", "text", "chat", "vlm", "audio", "embedding"],
         help=(
             "Benchmark mode. 'auto' infers from --dataset-path; "
             f"{DEFAULT_VLM_DATASET_PATH} maps to 'vlm' and "
@@ -696,8 +771,8 @@ def configure_argparse() -> argparse.ArgumentParser:
         "--backend",
         default=None,
         help=(
-            "Override backend for text/VLM runs. Defaults: openai for text, "
-            "openai-chat for VLM, openai-audio for audio, and "
+            "Override backend for text/chat/VLM runs. Defaults: openai for text, "
+            "openai-chat for chat and VLM, openai-audio for audio, and "
             "openai-embeddings for embeddings."
         ),
     )
@@ -706,8 +781,8 @@ def configure_argparse() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Override API endpoint. Defaults: /v1/completions for text, "
-            "/v1/chat/completions for VLM, /v1/audio/transcriptions for "
-            "audio, /v1/embeddings for embedding."
+            "/v1/chat/completions for chat and VLM, "
+            "/v1/audio/transcriptions for audio, /v1/embeddings for embedding."
         ),
     )
     parser.add_argument(
@@ -716,7 +791,7 @@ def configure_argparse() -> argparse.ArgumentParser:
         help=(
             "Local dataset path or Hugging Face dataset ID. Defaults to "
             f"{root / 'data/ShareGPT_V3_unfiltered_cleaned_split.json'} for "
-            f"text, {DEFAULT_VLM_DATASET_PATH} for VLM, "
+            f"text/chat, {DEFAULT_VLM_DATASET_PATH} for VLM, "
             f"{DEFAULT_AUDIO_DATASET_PATH} for audio, and "
             f"{DEFAULT_EMBEDDING_DATASET_PATH} for embeddings."
         ),
@@ -730,7 +805,7 @@ def configure_argparse() -> argparse.ArgumentParser:
         "--hf-split",
         default=None,
         help=(
-            "Optional Hugging Face split override. Defaults: train for text HF, "
+            "Optional Hugging Face split override. Defaults: train for text/chat HF, "
             f"{DEFAULT_VLM_HF_SPLIT} for VLM, {DEFAULT_AUDIO_HF_SPLIT} for "
             f"audio, {DEFAULT_EMBEDDING_HF_SPLIT} "
             "for embeddings. Some embedding datasets also require "
@@ -750,8 +825,8 @@ def configure_argparse() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help=(
-            "Fixed output length override for text/VLM/audio benchmark requests. "
-            f"Defaults to {DEFAULT_TEXT_OUTPUT_LEN} for text and "
+            "Fixed output length override for text/chat/VLM/audio benchmark requests. "
+            f"Defaults to {DEFAULT_TEXT_OUTPUT_LEN} for text/chat and "
             f"{DEFAULT_VLM_OUTPUT_LEN} for VLM."
         ),
     )
@@ -901,6 +976,7 @@ def main() -> int:
     LOG.info("[info] base-url: %s", args.base_url)
     LOG.info("[info] port: %s", args.port)
     LOG.info("[info] tokenizer: %s", args.tokenizer or args.model_name)
+    LOG.info("[info] request model override: %s", args.model_name)
     LOG.info("[info] debug-break: %s", args.debug_break)
 
     compose_infos: list[ComposeInfo] = []
@@ -949,11 +1025,12 @@ def main() -> int:
                     break
                 continue
             LOG.info(
-                "[info] service=%s compose=%s port=%s tokenizer=%s",
+                "[info] service=%s compose=%s port=%s tokenizer=%s served-model-name=%s",
                 info.service_name,
                 compose_file.name,
                 info.host_port,
                 info.tokenizer,
+                info.served_model_name,
             )
             compose_infos.append(info)
 

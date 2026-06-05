@@ -98,6 +98,47 @@ class BenchmarkMetrics:
     percentiles_e2el_ms: List[Tuple[float, float]]
 
 
+def _supports_openai_attachments(backend: str) -> bool:
+    return backend in {"openai-chat", "openai-audio"}
+
+
+async def _run_initial_test(
+    backend: str,
+    api_url: str,
+    model_id: str,
+    model_name: Optional[str],
+    test_prompt: str,
+    test_prompt_len: int,
+    test_output_len: int,
+    test_content: Optional[Dict[str, Collection[str]]],
+    logprobs: Optional[int],
+    best_of: int,
+    ignore_eos: bool,
+) -> Tuple[str, str, RequestFuncOutput]:
+    request_func = ASYNC_REQUEST_FUNCS[backend]
+    test_mm_content = (
+        test_content if _supports_openai_attachments(backend) else None)
+    test_input = RequestFuncInput(
+        model=model_id,
+        model_name=model_name,
+        prompt=test_prompt,
+        api_url=api_url,
+        prompt_len=test_prompt_len,
+        output_len=test_output_len,
+        logprobs=logprobs,
+        best_of=best_of,
+        multi_modal_content=test_mm_content,
+        ignore_eos=ignore_eos,
+    )
+    test_output = await request_func(request_func_input=test_input)
+    if test_output.success:
+        return backend, api_url, test_output
+    raise ValueError(
+        "Initial test run failed - Please make sure benchmark arguments are "
+        "correctly specified.\n"
+        f"Attempted route:\n  - {backend} {api_url}: {test_output.error}")
+
+
 def sample_sharegpt_requests(
     dataset_path: str,
     num_requests: int,
@@ -1163,9 +1204,7 @@ async def benchmark(
     max_concurrency: Optional[int],
     lora_modules: Optional[List[str]],
 ):
-    if backend in ASYNC_REQUEST_FUNCS:
-        request_func = ASYNC_REQUEST_FUNCS[backend]
-    else:
+    if backend not in ASYNC_REQUEST_FUNCS:
         raise ValueError(f"Unknown backend: {backend}")
     if backend == "openai-embeddings" and profile:
         raise ValueError("Profiling is not supported for embedding benchmark.")
@@ -1174,39 +1213,39 @@ async def benchmark(
 
     print("Starting initial single prompt test run...")
     test_prompt, test_prompt_len, test_output_len, test_content = input_requests[0]
-    test_mm_content = (
-        test_content if backend in {"openai-chat", "openai-audio"} else None
-    )
-    if backend not in {"openai-chat", "openai-audio"} and test_content is not None:
+    if not _supports_openai_attachments(backend) and test_content is not None:
         # multi-modal benchmark is only available on OpenAI Chat backend.
         raise ValueError(
             "Request attachments are only supported on 'openai-chat' and "
             "'openai-audio' backends.")
-    test_input = RequestFuncInput(
-        model=model_id,
-        model_name=model_name,
-        prompt=test_prompt,
+    selected_backend, selected_api_url, test_output = await _run_initial_test(
+        backend=backend,
         api_url=api_url,
-        prompt_len=test_prompt_len,
-        output_len=test_output_len,
+        model_id=model_id,
+        model_name=model_name,
+        test_prompt=test_prompt,
+        test_prompt_len=test_prompt_len,
+        test_output_len=test_output_len,
+        test_content=test_content,
         logprobs=logprobs,
         best_of=best_of,
-        multi_modal_content=test_mm_content,
         ignore_eos=ignore_eos,
     )
-
-    test_output = await request_func(request_func_input=test_input)
-    if not test_output.success:
-        raise ValueError(
-            "Initial test run failed - Please make sure benchmark arguments "
-            f"are correctly specified. Error: {test_output.error}")
-    else:
-        print("Initial test run completed. Starting main benchmark run...")
+    request_func = ASYNC_REQUEST_FUNCS[selected_backend]
+    backend = selected_backend
+    api_url = selected_api_url
+    test_mm_content = (
+        test_content if _supports_openai_attachments(backend) else None)
+    print("Initial test run completed. Starting main benchmark run...")
 
     if lora_modules:
         # For each input request, choose a LoRA module at random.
         lora_modules = iter(
             [random.choice(lora_modules) for _ in range(len(input_requests))])
+
+    profile_request_func = request_func
+    if backend in {"openai", "openai-chat"}:
+        profile_request_func = ASYNC_REQUEST_FUNCS["openai"]
 
     if profile:
         print("Starting profiler...")
@@ -1220,7 +1259,8 @@ async def benchmark(
                                          best_of=best_of,
                                          multi_modal_content=test_mm_content,
                                          ignore_eos=ignore_eos)
-        profile_output = await request_func(request_func_input=profile_input)
+        profile_output = await profile_request_func(
+            request_func_input=profile_input)
         if profile_output.success:
             print("Profiler started")
 
@@ -1287,7 +1327,8 @@ async def benchmark(
             logprobs=logprobs,
             best_of=best_of,
         )
-        profile_output = await request_func(request_func_input=profile_input)
+        profile_output = await profile_request_func(
+            request_func_input=profile_input)
         if profile_output.success:
             print("Profiler stopped")
 
@@ -1354,6 +1395,8 @@ async def benchmark(
                                     audio_stats["input_audio_throughput"]))
 
     result = {
+        "backend": backend,
+        "api_url": api_url,
         "duration": benchmark_duration,
         "completed": metrics.completed,
         "total_input_tokens": metrics.total_input,
