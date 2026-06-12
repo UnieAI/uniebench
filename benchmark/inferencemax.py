@@ -5,14 +5,20 @@ import sys
 import os
 import json
 import shutil
-import random
-import requests
 from datetime import datetime as dt
+from benchmark.warmup import warmup
+import time
 
 from log_utils import TRACE_LEVEL
 from benchmark.runtime_metadata import collect_runtime_metadata
 
 def inferencemax(cfg: DictConfig, container, token_lengths, concurrency, seed, num_prompts):
+    if 'warmup' in cfg.benchmark and cfg.benchmark.warmup:
+        warmup(cfg.server.base_url, cfg.server.port, cfg.server.model_id, 
+            cfg.benchmark.warmup_dataset_path, cfg.benchmark.warmup_requests,
+            256, cfg.autotest.openai_api_key if 'openai_api_key' in cfg.autotest else None)
+        logging.info('warmup sleep 60 seconds')
+        time.sleep(60)
     logging.info('run benchmark inferencemax...')
     benchmark(cfg, token_lengths, concurrency, seed)
     logging.info('standardize benchmark result...')
