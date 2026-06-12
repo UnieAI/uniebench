@@ -107,7 +107,7 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency, seed, request_rate):
             '--endpoint', endpoint,
             '--backend', backend,
             '--served-model-name', cfg.server.model_id,
-            '--num-prompts', f'{concurrency * 4}',
+            '--num-prompts', f'{concurrency * 8}',
             '--max-concurrency', f'{concurrency}',
             '--request-rate', 'inf',
             '--ignore-eos',
@@ -120,9 +120,9 @@ def benchmark(cfg: DictConfig, token_lengths, concurrency, seed, request_rate):
 
         if 'dataset_path' in cfg.benchmark and cfg.benchmark.dataset_path != 'none':
             cmd.extend([
-                '--dataset-name', 'sharegpt',
+                '--dataset-name', 'hf',
                 '--dataset-path', cfg.benchmark.dataset_path,
-                '--sharegpt-output-len', str(token_lengths.output_len),
+                '--hf-output-len', str(token_lengths.output_len),
             ])
         else:
             cmd.extend([
@@ -184,6 +184,7 @@ def benchmark_post_processing(cfg: DictConfig, container, concurrency, seed = No
             "output_tokens": data.get('total_output_tokens', NaN) / data.get('completed', NaN),
             "request_throughput": data.get('request_throughput', NaN),
             "output_token_throughput": data.get('output_throughput', NaN),
+            "total_token_throughput": data.get('total_token_throughput', NaN),
 
             "request_latency.avg": data.get('mean_e2el_ms', NaN),
             "request_latency.median": data.get('median_e2el_ms', NaN),

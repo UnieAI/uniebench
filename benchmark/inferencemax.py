@@ -90,6 +90,8 @@ def benchmark_post_processing(cfg: DictConfig, container, concurrency, seed = No
     with open(source, 'r') as fr:
         data = json.load(fr)
     
+    NaN = float('nan')
+    
     result = {
         "platform": cfg.server.platform,
         "engine": container.name,
@@ -107,6 +109,7 @@ def benchmark_post_processing(cfg: DictConfig, container, concurrency, seed = No
 
         "request_throughput": data['request_throughput'],
         "output_token_throughput": data['output_throughput'],
+        "total_token_throughput": data.get('total_token_throughput', NaN),
 
         "request_latency.avg": data['mean_e2el_ms'],
         "request_latency.median": data['median_e2el_ms'],
