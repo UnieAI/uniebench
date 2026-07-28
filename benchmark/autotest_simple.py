@@ -905,6 +905,15 @@ def configure_argparse() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--no-restart",
+        action="store_true",
+        help=(
+            "In compose-file mode, start each compose service once and reuse "
+            "that container across all requested concurrency values before "
+            "tearing it down."
+        ),
+    )
+    parser.add_argument(
         "--debug-break",
         action="store_true",
         help="Stop immediately on first failure for debugging.",
@@ -973,6 +982,7 @@ def main() -> int:
     LOG.info("[info] concurrency: %s", concurrency_values)
     LOG.info("[info] seed: %s", args.seed)
     LOG.info("[info] with-container: %s", args.with_container)
+    LOG.info("[info] no-restart: %s", args.no_restart)
     LOG.info("[info] base-url: %s", args.base_url)
     LOG.info("[info] port: %s", args.port)
     LOG.info("[info] tokenizer: %s", args.tokenizer or args.model_name)
@@ -1041,119 +1051,267 @@ def main() -> int:
         )
 
     if not stop_requested:
-        for conc in concurrency_values:
-            LOG.info("[pass] concurrency=%s", conc)
+        if args.no_restart and args.with_container:
+            LOG.info(
+                "[container] --no-restart has no additional effect with "
+                "--with-container; the existing container is already reused"
+            )
+
+        if args.no_restart and not args.with_container:
             for info in compose_infos:
                 compose_file = info.compose_file
-                result_json = result_file_path(result_dir, info.service_name, conc)
-                if result_json.exists():
-                    skipped_cases += 1
-                    LOG.info(
-                        "[skip] compose=%s service=%s concurrency=%s result exists: %s",
-                        compose_file.name,
-                        info.service_name,
-                        conc,
-                        result_json,
-                    )
+                pending_concurrency: list[int] = []
+
+                for conc in concurrency_values:
+                    result_json = result_file_path(result_dir, info.service_name, conc)
+                    if result_json.exists():
+                        skipped_cases += 1
+                        LOG.info(
+                            "[skip] compose=%s service=%s concurrency=%s result exists: %s",
+                            compose_file.name,
+                            info.service_name,
+                            conc,
+                            result_json,
+                        )
+                        continue
+                    pending_concurrency.append(conc)
+
+                if not pending_concurrency:
                     continue
-                total_cases += 1
-                case_failed = False
-                LOG.info(
-                    "[start] compose=%s service=%s concurrency=%s",
-                    compose_file.name,
-                    info.service_name,
-                    conc,
-                )
-                start_ts = time.time()
+
                 docker_log_proc: subprocess.Popen[str] | None = None
+                teardown_required = False
+                startup_failed = False
+                startup_error: Exception | None = None
+
                 try:
-                    if args.with_container:
+                    wait_for_port_free(
+                        info.host_port,
+                        timeout_sec=DEFAULT_PORT_FREE_WAIT_SEC,
+                    )
+                    teardown_required = True
+                    docker_log_proc = compose_up(root=root, info=info)
+
+                    for conc in pending_concurrency:
+                        LOG.info("[pass] concurrency=%s", conc)
+                        total_cases += 1
                         LOG.info(
-                            "[container] skip compose up (use existing container): "
-                            "compose=%s service=%s",
+                            "[start] compose=%s service=%s concurrency=%s",
                             compose_file.name,
                             info.service_name,
+                            conc,
                         )
-                    else:
-                        wait_for_port_free(
-                            info.host_port,
-                            timeout_sec=DEFAULT_PORT_FREE_WAIT_SEC,
-                        )
-                        docker_log_proc = compose_up(root=root, info=info)
-                    wait_for_health(
-                        url=healthcheck_url(info),
-                        timeout_sec=args.health_timeout,
-                        interval_sec=args.health_interval,
-                    )
-                    run_benchmark_for_concurrency(
-                        root=root,
-                        benchmark_config=benchmark_config,
-                        result_dir=result_dir,
-                        model_name=args.model_name,
-                        info=info,
-                        concurrency=conc,
-                        prompts_factor=args.prompts_factor,
-                        seed=args.seed,
-                        python_bin=args.python_bin,
-                    )
-                    elapsed = time.time() - start_ts
-                    LOG.info(
-                        "[done] compose=%s service=%s concurrency=%s elapsed=%.1fs",
-                        compose_file.name,
-                        info.service_name,
-                        conc,
-                        elapsed,
-                    )
-                    success_cases += 1
+                        start_ts = time.time()
+                        case_failed = False
+                        try:
+                            wait_for_health(
+                                url=healthcheck_url(info),
+                                timeout_sec=args.health_timeout,
+                                interval_sec=args.health_interval,
+                            )
+                            run_benchmark_for_concurrency(
+                                root=root,
+                                benchmark_config=benchmark_config,
+                                result_dir=result_dir,
+                                model_name=args.model_name,
+                                info=info,
+                                concurrency=conc,
+                                prompts_factor=args.prompts_factor,
+                                seed=args.seed,
+                                python_bin=args.python_bin,
+                            )
+                            elapsed = time.time() - start_ts
+                            LOG.info(
+                                "[done] compose=%s service=%s concurrency=%s elapsed=%.1fs",
+                                compose_file.name,
+                                info.service_name,
+                                conc,
+                                elapsed,
+                            )
+                            success_cases += 1
+                        except Exception as exc:
+                            message = f"{compose_file.name} (concurrency={conc}): {exc}"
+                            failures.append(message)
+                            LOG.exception("[error] %s", message)
+                            case_failed = True
+
+                        if case_failed and args.debug_break:
+                            LOG.warning(
+                                "[debug-break] stopping after failure at compose=%s concurrency=%s",
+                                compose_file.name,
+                                conc,
+                            )
+                            stop_requested = True
+                            break
                 except Exception as exc:
-                    message = f"{compose_file.name} (concurrency={conc}): {exc}"
-                    failures.append(message)
-                    LOG.exception("[error] %s", message)
-                    case_failed = True
-                finally:
-                    LOG.info(
-                        "[teardown] compose=%s service=%s concurrency=%s",
+                    startup_failed = True
+                    startup_error = exc
+                    LOG.exception(
+                        "[error] shared container startup failed: compose=%s service=%s",
                         compose_file.name,
                         info.service_name,
-                        conc,
                     )
-                    if args.with_container:
+                finally:
+                    if teardown_required:
                         LOG.info(
-                            "[container] skip compose down (keep existing container): "
-                            "compose=%s service=%s",
+                            "[teardown] compose=%s service=%s mode=no-restart",
                             compose_file.name,
                             info.service_name,
                         )
-                    else:
                         try:
                             compose_down(root=root, info=info)
                         except Exception as exc:
                             message = (
-                                f"{compose_file.name} (concurrency={conc}, teardown): {exc}"
+                                f"{compose_file.name} (teardown after shared run): {exc}"
                             )
                             failures.append(message)
                             LOG.exception("[error] %s", message)
-                            case_failed = True
+                            if args.debug_break:
+                                stop_requested = True
                         try:
                             stop_compose_logs_stream(docker_log_proc)
                         except Exception as exc:
                             message = (
                                 f"{compose_file.name} "
-                                f"(concurrency={conc}, docker log stream): {exc}"
+                                "(docker log stream after shared run): "
+                                f"{exc}"
                             )
                             failures.append(message)
                             LOG.exception("[error] %s", message)
-                            case_failed = True
-                if case_failed and args.debug_break:
-                    LOG.warning(
-                        "[debug-break] stopping after failure at compose=%s concurrency=%s",
+                            if args.debug_break:
+                                stop_requested = True
+
+                if startup_failed:
+                    total_cases += len(pending_concurrency)
+                    error_message = str(startup_error)
+                    for conc in pending_concurrency:
+                        failures.append(
+                            f"{compose_file.name} (concurrency={conc}, startup): "
+                            f"{error_message}"
+                        )
+                    if args.debug_break:
+                        LOG.warning(
+                            "[debug-break] stopping after startup failure at compose=%s",
+                            compose_file.name,
+                        )
+                        stop_requested = True
+
+                if stop_requested:
+                    break
+        else:
+            for conc in concurrency_values:
+                LOG.info("[pass] concurrency=%s", conc)
+                for info in compose_infos:
+                    compose_file = info.compose_file
+                    result_json = result_file_path(result_dir, info.service_name, conc)
+                    if result_json.exists():
+                        skipped_cases += 1
+                        LOG.info(
+                            "[skip] compose=%s service=%s concurrency=%s result exists: %s",
+                            compose_file.name,
+                            info.service_name,
+                            conc,
+                            result_json,
+                        )
+                        continue
+                    total_cases += 1
+                    case_failed = False
+                    LOG.info(
+                        "[start] compose=%s service=%s concurrency=%s",
                         compose_file.name,
+                        info.service_name,
                         conc,
                     )
-                    stop_requested = True
+                    start_ts = time.time()
+                    docker_log_proc: subprocess.Popen[str] | None = None
+                    try:
+                        if args.with_container:
+                            LOG.info(
+                                "[container] skip compose up (use existing container): "
+                                "compose=%s service=%s",
+                                compose_file.name,
+                                info.service_name,
+                            )
+                        else:
+                            wait_for_port_free(
+                                info.host_port,
+                                timeout_sec=DEFAULT_PORT_FREE_WAIT_SEC,
+                            )
+                            docker_log_proc = compose_up(root=root, info=info)
+                        wait_for_health(
+                            url=healthcheck_url(info),
+                            timeout_sec=args.health_timeout,
+                            interval_sec=args.health_interval,
+                        )
+                        run_benchmark_for_concurrency(
+                            root=root,
+                            benchmark_config=benchmark_config,
+                            result_dir=result_dir,
+                            model_name=args.model_name,
+                            info=info,
+                            concurrency=conc,
+                            prompts_factor=args.prompts_factor,
+                            seed=args.seed,
+                            python_bin=args.python_bin,
+                        )
+                        elapsed = time.time() - start_ts
+                        LOG.info(
+                            "[done] compose=%s service=%s concurrency=%s elapsed=%.1fs",
+                            compose_file.name,
+                            info.service_name,
+                            conc,
+                            elapsed,
+                        )
+                        success_cases += 1
+                    except Exception as exc:
+                        message = f"{compose_file.name} (concurrency={conc}): {exc}"
+                        failures.append(message)
+                        LOG.exception("[error] %s", message)
+                        case_failed = True
+                    finally:
+                        LOG.info(
+                            "[teardown] compose=%s service=%s concurrency=%s",
+                            compose_file.name,
+                            info.service_name,
+                            conc,
+                        )
+                        if args.with_container:
+                            LOG.info(
+                                "[container] skip compose down (keep existing container): "
+                                "compose=%s service=%s",
+                                compose_file.name,
+                                info.service_name,
+                            )
+                        else:
+                            try:
+                                compose_down(root=root, info=info)
+                            except Exception as exc:
+                                message = (
+                                    f"{compose_file.name} (concurrency={conc}, teardown): {exc}"
+                                )
+                                failures.append(message)
+                                LOG.exception("[error] %s", message)
+                                case_failed = True
+                            try:
+                                stop_compose_logs_stream(docker_log_proc)
+                            except Exception as exc:
+                                message = (
+                                    f"{compose_file.name} "
+                                    f"(concurrency={conc}, docker log stream): {exc}"
+                                )
+                                failures.append(message)
+                                LOG.exception("[error] %s", message)
+                                case_failed = True
+                    if case_failed and args.debug_break:
+                        LOG.warning(
+                            "[debug-break] stopping after failure at compose=%s concurrency=%s",
+                            compose_file.name,
+                            conc,
+                        )
+                        stop_requested = True
+                        break
+                if stop_requested:
                     break
-            if stop_requested:
-                break
 
     if failures:
         LOG.error("[summary] FAILURES")

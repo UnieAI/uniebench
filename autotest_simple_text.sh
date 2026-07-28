@@ -5,3 +5,5 @@ python3 benchmark/autotest_simple.py \
   --dataset-path neural-bridge/rag-dataset-12000 \
   --result-dir ./results \
   --concurrency 1,16,32,64,128,256,512
+# "$@"
+# --no-restart
