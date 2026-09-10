@@ -394,9 +394,10 @@ def find_model_path(command: str | list[str] | None) -> str | None:
     if model_path:
         return model_path
 
-    # Support `vllm serve <model_path>` style command.
+    # Support `vllm serve <model_path>` and `tokenspeed serve <model_path>`
+    # style commands.
     for i in range(len(tokens) - 2):
-        if tokens[i] == "vllm" and tokens[i + 1] == "serve":
+        if tokens[i] in {"vllm", "tokenspeed"} and tokens[i + 1] == "serve":
             candidate = tokens[i + 2]
             if not candidate.startswith("-"):
                 return candidate
@@ -454,6 +455,20 @@ def parse_compose_with_docker(compose_file: Path, root: Path) -> ComposeInfo:
     )
 
 
+def resolve_compose_env_default(value: str) -> str:
+    """Resolve a compose-style ``${VAR:-default}`` expression to its default.
+
+    Falls back to returning the value unchanged when it is not a variable
+    reference. This lets the text fallback parser handle compose files that
+    parametrize ports and model paths, e.g. ``${HOST_PORT:-8977}`` or
+    ``${MODEL_PATH:-/models/google/gemma-3-27b-it}``.
+    """
+    match = re.fullmatch(r"\$\{[A-Za-z_][A-Za-z0-9_]*:-([^}]*)\}", value.strip())
+    if match:
+        return match.group(1)
+    return value
+
+
 def parse_compose_fallback(compose_file: Path) -> ComposeInfo:
     content = compose_file.read_text(encoding="utf-8")
 
@@ -463,25 +478,34 @@ def parse_compose_fallback(compose_file: Path) -> ComposeInfo:
     else:
         service_name = compose_file.stem
 
-    port_match = re.search(r'(?m)^\s*-\s*"?(\d+):\d+(?:/\w+)?"?\s*$', content)
+    # Match "<host>:<container>" where <host> may be a literal port or a
+    # compose variable with a default, e.g. "${HOST_PORT:-8977}:8977".
+    port_match = re.search(
+        r'(?m)^\s*-\s*"?(\d+|\$\{[A-Za-z_][A-Za-z0-9_]*:-\d+\}):\d+(?:/\w+)?"?\s*$',
+        content,
+    )
     if not port_match:
         raise RuntimeError(f"Unable to extract host port from {compose_file}")
-    host_port = int(port_match.group(1))
+    host_port = int(resolve_compose_env_default(port_match.group(1)))
 
     model_match = re.search(r"--model(?:-path)?(?:=|\s+)([^\s\"']+)", content)
     if model_match:
-        tokenizer = model_match.group(1)
+        tokenizer = resolve_compose_env_default(model_match.group(1))
     else:
-        vllm_match = re.search(r"vllm\s+serve\s+([^\s\"'\\]+)", content)
-        if not vllm_match:
+        serve_match = re.search(
+            r"(?:vllm|tokenspeed)\s+serve\s+([^\s\"'\\]+)", content
+        )
+        if not serve_match:
             raise RuntimeError(f"Unable to extract model path from {compose_file}")
-        tokenizer = vllm_match.group(1)
+        tokenizer = resolve_compose_env_default(serve_match.group(1))
     served_model_match = re.search(
         r"--served-model-name(?:=|\s+)([^\s\"']+)",
         content,
     )
     served_model_name = (
-        served_model_match.group(1) if served_model_match else None
+        resolve_compose_env_default(served_model_match.group(1))
+        if served_model_match
+        else None
     )
 
     return ComposeInfo(
