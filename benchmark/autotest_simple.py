@@ -390,7 +390,7 @@ def find_flag_value(command: str | list[str] | None, *flags: str) -> str | None:
 
 def find_model_path(command: str | list[str] | None) -> str | None:
     tokens = _command_tokens(command)
-    model_path = find_flag_value(command, "--model", "--model-path")
+    model_path = find_flag_value(command, "--model", "--model-path", "-m")
     if model_path:
         return model_path
 
@@ -401,6 +401,36 @@ def find_model_path(command: str | list[str] | None) -> str | None:
             candidate = tokens[i + 2]
             if not candidate.startswith("-"):
                 return candidate
+    return None
+
+
+def normalize_compose_environment(environment: object) -> dict[str, str]:
+    """Normalize compose `environment` (mapping or KEY=VALUE list) to a dict."""
+    env: dict[str, str] = {}
+    if isinstance(environment, dict):
+        for key, value in environment.items():
+            if value is None:
+                continue
+            env[str(key)] = str(value)
+        return env
+    if isinstance(environment, list):
+        for entry in environment:
+            if isinstance(entry, dict):
+                for key, value in entry.items():
+                    if value is None:
+                        continue
+                    env[str(key)] = str(value)
+            elif isinstance(entry, str) and "=" in entry:
+                key, value = entry.split("=", 1)
+                env[key] = value
+    return env
+
+
+def find_env_value(environment: object, *keys: str) -> str | None:
+    env = normalize_compose_environment(environment)
+    for key in keys:
+        if key in env and str(env[key]).strip():
+            return str(env[key]).strip()
     return None
 
 
@@ -422,6 +452,72 @@ def find_host_port(ports: object) -> int | None:
     return None
 
 
+def resolve_tokenizer_host_path(
+    tokenizer: str,
+    volumes: object | None = None,
+    compose_text: str | None = None,
+) -> str:
+    """Map a container model path (e.g. /models) to the host bind-mount source."""
+    if not tokenizer:
+        return tokenizer
+    if isinstance(volumes, list):
+        for entry in volumes:
+            if not isinstance(entry, dict):
+                continue
+            target = str(entry.get("target") or entry.get("destination") or "")
+            source = entry.get("source") or entry.get("Source")
+            if not target or not source:
+                continue
+            if tokenizer == target or tokenizer.startswith(target.rstrip("/") + "/"):
+                suffix = tokenizer[len(target):] if tokenizer.startswith(target) else ""
+                return f"{source}{suffix}"
+    if compose_text:
+        vol_re = r'(?m)^\s*-\s*["\']?([^:"\']+):([^:"\']+)(?::[^\s"\']*)?["\']?\s*$'
+        for match in re.finditer(vol_re, compose_text):
+            source, target = match.group(1).strip(), match.group(2).strip()
+            if source.startswith(("./", "../", "/")):
+                if tokenizer == target or tokenizer.startswith(target.rstrip("/") + "/"):
+                    suffix = tokenizer[len(target):] if tokenizer.startswith(target) else ""
+                    return f"{source}{suffix}"
+    return tokenizer
+
+
+def read_compose_container_name(compose_file: Path, service_name: str) -> str | None:
+    """Best-effort container_name from compose YAML for conflict cleanup."""
+    content = compose_file.read_text(encoding="utf-8")
+    pattern = (
+        rf"(?ms)^\s{{2}}{re.escape(service_name)}:\s*$.*?"
+        rf"^\s+container_name:\s*[\"']?([^\"'\s]+)[\"']?\s*$"
+    )
+    match = re.search(pattern, content)
+    if match:
+        return match.group(1)
+    match = re.search(
+        r'(?m)^\s*container_name:\s*["\']?([^"\'\s]+)["\']?\s*$',
+        content,
+    )
+    return match.group(1) if match else None
+
+
+def remove_conflicting_container(name: str) -> None:
+    """Remove a leftover container that blocks compose up (name conflict)."""
+    probe = run_cmd(
+        ["docker", "inspect", "-f", "{{.Id}}", name],
+        cwd=Path("."),
+        check=False,
+        capture_output=True,
+    )
+    if probe.returncode != 0:
+        return
+    LOG.warning("[warn] removing conflicting container %s before compose up", name)
+    run_cmd(
+        ["docker", "rm", "-f", name],
+        cwd=Path("."),
+        check=False,
+        capture_output=True,
+    )
+
+
 def parse_compose_with_docker(compose_file: Path, root: Path) -> ComposeInfo:
     result = run_cmd(
         ["docker", "compose", "-f", str(compose_file), "config", "--format", "json"],
@@ -436,15 +532,30 @@ def parse_compose_with_docker(compose_file: Path, root: Path) -> ComposeInfo:
 
     service_name = next(iter(services))
     service = services[service_name]
+    environment = service.get("environment")
     host_port = find_host_port(service.get("ports"))
+    if host_port is None:
+        env_port = find_env_value(environment, "VLLM_PORT", "HOST_PORT", "PORT")
+        if env_port and str(env_port).isdigit():
+            host_port = int(str(env_port))
     command = service.get("command")
     tokenizer = find_model_path(command)
-    served_model_name = find_flag_value(command, "--served-model-name")
+    if not tokenizer:
+        tokenizer = find_env_value(environment, "MODEL_PATH", "MODEL_DIR", "MODEL", "TOKENIZER")
+    served_model_name = find_flag_value(command, "--served-model-name", "--alias")
+    if not served_model_name:
+        served_model_name = find_env_value(
+            environment, "SERVED_MODEL_NAME", "MODEL_NAME"
+        )
 
     if host_port is None:
         raise RuntimeError(f"Unable to extract host port from {compose_file}")
     if not tokenizer:
         raise RuntimeError(f"Unable to extract model path from {compose_file}")
+
+    tokenizer = resolve_tokenizer_host_path(
+        tokenizer, volumes=service.get("volumes")
+    )
 
     return ComposeInfo(
         compose_file=compose_file,
@@ -484,29 +595,55 @@ def parse_compose_fallback(compose_file: Path) -> ComposeInfo:
         r'(?m)^\s*-\s*"?(\d+|\$\{[A-Za-z_][A-Za-z0-9_]*:-\d+\}):\d+(?:/\w+)?"?\s*$',
         content,
     )
-    if not port_match:
-        raise RuntimeError(f"Unable to extract host port from {compose_file}")
-    host_port = int(resolve_compose_env_default(port_match.group(1)))
+    if port_match:
+        host_port = int(resolve_compose_env_default(port_match.group(1)))
+    else:
+        # Host-network / env-driven ports, e.g. VLLM_PORT: "8976"
+        env_port_match = re.search(
+            r"(?m)^\s*(?:VLLM_PORT|HOST_PORT|PORT):\s*[\"']?(\d+)[\"']?\s*$",
+            content,
+        )
+        if not env_port_match:
+            raise RuntimeError(f"Unable to extract host port from {compose_file}")
+        host_port = int(env_port_match.group(1))
 
-    model_match = re.search(r"--model(?:-path)?(?:=|\s+)([^\s\"']+)", content)
+    model_match = re.search(
+        r"(?:--model(?:-path)?|-m)(?:=|\s+)([^\s\"']+)", content
+    )
     if model_match:
         tokenizer = resolve_compose_env_default(model_match.group(1))
     else:
         serve_match = re.search(
             r"(?:vllm|tokenspeed)\s+serve\s+([^\s\"'\\]+)", content
         )
-        if not serve_match:
-            raise RuntimeError(f"Unable to extract model path from {compose_file}")
-        tokenizer = resolve_compose_env_default(serve_match.group(1))
+        if serve_match:
+            tokenizer = resolve_compose_env_default(serve_match.group(1))
+        else:
+            env_model_match = re.search(
+                r"(?m)^\s*(?:MODEL_PATH|MODEL_DIR|MODEL|TOKENIZER):\s*[\"']?([^\"\'\s]+)[\"']?\s*$",
+                content,
+            )
+            if not env_model_match:
+                raise RuntimeError(f"Unable to extract model path from {compose_file}")
+            tokenizer = resolve_compose_env_default(env_model_match.group(1))
     served_model_match = re.search(
-        r"--served-model-name(?:=|\s+)([^\s\"']+)",
+        r"(?:--served-model-name|--alias)(?:=|\s+)([^\s\"']+)",
         content,
     )
-    served_model_name = (
-        resolve_compose_env_default(served_model_match.group(1))
-        if served_model_match
-        else None
-    )
+    if served_model_match:
+        served_model_name = resolve_compose_env_default(served_model_match.group(1))
+    else:
+        env_served_match = re.search(
+            r"(?m)^\s*(?:SERVED_MODEL_NAME|MODEL_NAME):\s*[\"']?([^\"\'\s]+)[\"']?\s*$",
+            content,
+        )
+        served_model_name = (
+            resolve_compose_env_default(env_served_match.group(1))
+            if env_served_match
+            else None
+        )
+
+    tokenizer = resolve_tokenizer_host_path(tokenizer, compose_text=content)
 
     return ComposeInfo(
         compose_file=compose_file,
@@ -653,7 +790,18 @@ def run_benchmark_for_concurrency(
         )
 
     LOG.info("[run] %s", " ".join(cmd))
-    run_cmd(cmd, cwd=root, check=True, capture_output=False)
+    result = run_cmd(cmd, cwd=root, check=False, capture_output=True)
+    if result.stdout:
+        LOG.info("[benchmark stdout]\n%s", result.stdout.rstrip())
+    if result.stderr:
+        LOG.info("[benchmark stderr]\n%s", result.stderr.rstrip())
+    if result.returncode != 0:
+        raise subprocess.CalledProcessError(
+            result.returncode,
+            cmd,
+            output=result.stdout,
+            stderr=result.stderr,
+        )
 
 
 def result_file_path(result_dir: Path, service_name: str, concurrency: int) -> Path:
@@ -718,6 +866,9 @@ def compose_up(root: Path, info: ComposeInfo) -> subprocess.Popen[str] | None:
     compose_dir = info.compose_file.parent
     compose_name = info.compose_file.name
     project_name = compose_project_name(info)
+    conflict_name = read_compose_container_name(info.compose_file, info.service_name)
+    if conflict_name:
+        remove_conflicting_container(conflict_name)
     cmd = [
         "docker",
         "compose",
@@ -897,8 +1048,9 @@ def configure_argparse() -> argparse.ArgumentParser:
         "--tokenizer",
         default=None,
         help=(
-            "Tokenizer/model path for benchmark_serving.py in --with-container "
-            "direct mode. Defaults to --model-name when omitted."
+            "Tokenizer/model path for benchmark_serving.py in all modes. "
+            "Overrides the model path extracted from compose files when set. "
+            "In --with-container direct mode, defaults to --model-name when omitted."
         ),
     )
     parser.add_argument(
@@ -1067,6 +1219,28 @@ def main() -> int:
                 info.served_model_name,
             )
             compose_infos.append(info)
+
+    if args.tokenizer:
+        overridden: list[ComposeInfo] = []
+        for info in compose_infos:
+            if info.tokenizer != args.tokenizer:
+                LOG.info(
+                    "[info] tokenizer override: %s -> %s (service=%s)",
+                    info.tokenizer,
+                    args.tokenizer,
+                    info.service_name,
+                )
+            overridden.append(
+                ComposeInfo(
+                    compose_file=info.compose_file,
+                    service_name=info.service_name,
+                    host_port=info.host_port,
+                    tokenizer=args.tokenizer,
+                    base_url=info.base_url,
+                    served_model_name=info.served_model_name,
+                )
+            )
+        compose_infos = overridden
 
     if not compose_infos:
         raise RuntimeError(

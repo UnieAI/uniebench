@@ -1,8 +1,17 @@
 requests
 hydra-core
+omegaconf
 docker
 genai-perf
 gspread
 google-oauth2-tool
 aiohttp
 datasets
+numpy
+pandas
+transformers
+huggingface_hub
+Pillow
+tqdm
+pyarrow
+soundfile
