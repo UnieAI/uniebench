@@ -312,8 +312,12 @@ async def async_request_openai_completions(
                         if not chunk_bytes:
                             continue
 
-                        chunk = chunk_bytes.decode("utf-8").removeprefix(
-                            "data: ")
+                        line = chunk_bytes.decode("utf-8")
+                        # Skip SSE comment keep-alives (e.g. the gateway's
+                        # ": ping") like the chat backend above does.
+                        if line.startswith(":"):
+                            continue
+                        chunk = line.removeprefix("data: ")
                         if chunk != "[DONE]":
                             data = json.loads(chunk)
                             # print('usage2-------------------------: ', data)
